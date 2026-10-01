@@ -52,8 +52,8 @@ function stats(L){const w=L.filter(t=>t.net>0),l=L.filter(t=>t.net<0),sw=w.reduc
   mw:Math.max(0,...L.map(t=>t.net)),ml:Math.min(0,...L.map(t=>t.net)),mc,dd}}
 
 function grp(L,kf,sf){const m={};L.forEach(t=>(m[kf(t)]??=[]).push(t));return Object.keys(m).map(k=>({k,s:sf?sf(m[k][0]):'',n:m[k].length,w:m[k].filter(t=>t.net>0).length,p:m[k].reduce((a,t)=>a+t.net,0)}))}
-function tbl(rows,head){const mx=Math.max(1,...rows.map(r=>Math.abs(r.p)));
- return `<table><tr><th>${head}</th><th>回数</th><th>勝率</th><th>損益</th><th></th></tr>`+rows.map(r=>`<tr${r.s?` data-s="${esc(r.s)}"`:''}><td>${esc(r.k)}</td><td>${r.n}</td><td>${(r.w/r.n*100).toFixed(0)}%</td><td class="${cls(r.p)}">${Math.round(r.p).toLocaleString('ja-JP')}</td><td class="b"><i class="${r.p>=0?'up':'dn'}" style="width:${Math.abs(r.p)/mx*100}%"></i></td></tr>`).join('')+'</table>'}
+function tbl(rows,head){
+ return `<table><tr><th>${head}</th><th>回数</th><th>勝率</th><th>損益(円)</th><th>1回あたり(円)</th></tr>`+rows.map(r=>`<tr${r.s?` data-s="${esc(r.s)}"`:''}><td>${esc(r.k)}</td><td>${r.n}</td><td>${(r.w/r.n*100).toFixed(0)}%</td><td class="${cls(r.p)}">${Math.round(r.p).toLocaleString('ja-JP')}</td><td class="${cls(r.p)}">${Math.round(r.p/r.n).toLocaleString('ja-JP')}</td></tr>`).join('')+'</table>'}
 function curve(L){if(!L.length)return'';let c=0;const p=[0,...L.map(t=>c+=t.net)],mn=Math.min(...p),mx=Math.max(...p),r=mx-mn||1;
  const X=i=>i/(p.length-1||1)*300,Y=v=>56-(v-mn)/r*50;
  return `<svg viewBox="0 0 300 60" preserveAspectRatio="none" style="width:100%;height:46px;display:block" role="img" aria-label="累計損益"><line x1="0" x2="300" y1="${Y(0)}" y2="${Y(0)}" stroke="var(--bd)" stroke-dasharray="3"/><polyline fill="none" stroke="${c>=0?'var(--up)':'var(--dn)'}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="${p.map((v,i)=>X(i)+','+Y(v)).join(' ')}"/></svg>`}
@@ -65,7 +65,7 @@ const keep=(sel,v)=>{sel.value=[...sel.options].some(o=>o.value==v)?v:'ALL'};
 const mmss=s=>Math.floor(s/60)+'分'+pad(Math.round(s%60))+'秒';
 const chart=(rows,lf)=>{if(!rows.length)return'<div class="mu">データなし</div>';const n=rows.length,W=420,H=96,z=H/2,mx=Math.max(1,...rows.map(r=>Math.abs(r.p))),bw=W/n,sk=n>14?Math.ceil(n/14):1;
  return `<svg viewBox="0 0 ${W} ${H+24}" style="width:100%;height:auto;display:block" role="img"><line x1="0" x2="${W}" y1="${z}" y2="${z}" stroke="var(--bd)"/>`+rows.map((r,i)=>{const x=i*bw+bw*.15,c=x+bw*.35,h=Math.abs(r.p)/mx*(z-10),col=r.p>=0?'var(--up)':'var(--dn)',lab=i%sk?'':`<text x="${c}" y="${H+10}" font-size="9" text-anchor="middle" fill="var(--mu)">${esc(lf?lf(r.k):r.k)}</text>`;
-  return `<rect x="${x}" y="${r.p>=0?z-h:z}" width="${bw*.7}" height="${Math.max(1,h)}" fill="${col}"/>${n<=16?`<text x="${c}" y="${r.p>=0?z-h-2:z+h+8}" font-size="8" text-anchor="middle" fill="var(--tx)">${(r.p/1000).toFixed(1)}</text><text x="${c}" y="${H+20}" font-size="8" text-anchor="middle" fill="var(--mu)">${r.n}</text>`:''}${lab}`}).join('')+'</svg>'};
+  return `<rect x="${x}" y="${r.p>=0?z-h:z}" width="${bw*.7}" height="${Math.max(1,h)}" fill="${col}"/>${n<=16?`<text x="${c}" y="${r.p>=0?z-h-2:z+h+8}" font-size="8" text-anchor="middle" fill="var(--tx)">${(r.p/1000).toFixed(1)}</text><text x="${c}" y="${H+20}" font-size="8" text-anchor="middle" fill="var(--mu)">${r.n}</text>`:''}${lab}`})+'</svg>'+'<div class="mu" style="font-size:11px">棒の上の数字=損益(千円)、下の数字=トレード回数。赤=利益、青=損失</div>'};
 function render(){
  const T=build().sort((a,b)=>a.date+a.start<b.date+b.start?-1:1),C=T.filter(t=>!t.open);
  const months=[...new Set(C.map(t=>t.date.slice(0,7)))].sort().reverse(),days=[...new Set(C.map(t=>t.date))].sort().reverse();
@@ -74,7 +74,7 @@ function render(){
  dsel.innerHTML='<option value="ALL">全期間</option><optgroup label="月">'+months.map(m=>`<option>${m}</option>`).join('')+'</optgroup><optgroup label="日">'+days.map(d=>`<option>${d}</option>`).join('')+'</optgroup>';
  ssel.innerHTML='<option value="ALL">全銘柄</option>'+Object.keys(sy).sort().map(s=>`<option value="${esc(s)}">${esc(s+' '+sy[s])}</option>`).join('');
  keep(dsel,pd);keep(ssel,ps);$('#sample').classList.toggle('hide',EX.length>0);
- const ids=['sum','tband','daily','monthly','cmp','sym','hold','dow','trades'];
+ const ids=['sum','tband','daily','monthly','cmp','sym','hold','dow','trades','mktpnl','secpnl','setuppnl','status'];
  if(!C.length){ids.forEach(i=>$('#'+i).innerHTML='');$('#sum').innerHTML='<div class="mu" style="padding:8px">約定履歴CSVを読み込むと、ここに成績が表示されます(画面にドロップしてもOK)。</div>';VIEW=[];return}
  const P=dsel.value,S=ssel.value,inP=t=>t.date.startsWith(P=='ALL'?'':P),inS=t=>S=='ALL'||t.sym==S;
  const L=C.filter(t=>inP(t)&&inS(t)),open=T.filter(t=>t.open&&inP(t)&&inS(t)).length;VIEW=L;const s=stats(L),CS=C.filter(inS);
@@ -105,7 +105,7 @@ function render(){
  $('#dow').innerHTML=tbl(dw,'曜日');
  const ld=C.at(-1).date,sm=f=>C.filter(f).reduce((a,t)=>a+t.net,0),v1=sm(t=>t.date==ld),v2=sm(t=>t.date.slice(0,7)==ld.slice(0,7)),v3=sm(t=>t.date.slice(0,4)==ld.slice(0,4));
  $('#strip').innerHTML=`最新日 ${ld} <b class="${cls(v1)}">${yen(v1)}</b>　今月 <b class="${cls(v2)}">${yen(v2)}</b>　今年 <b class="${cls(v3)}">${yen(v3)}</b>`;
- $('#trt').textContent=L.length+'件';
+ $('#trt').textContent=L.length+'件';extra(L,C,S,P);
  $('#trades').innerHTML=L.slice().reverse().map(t=>`<details><summary><span class="mu">${P.length==10?'':t.date.slice(5)+' '}${P.length==10?t.start:t.start.slice(0,5)}</span><span class="${t.ex[0].side>0?'up':'dn'}">${t.ex[0].side>0?'買':'売'}</span><span>${esc(t.sym)} ${esc(t.name)}</span><span class="mu">${Math.floor(t.hold/60)}:${pad(t.hold%60)}</span><b class="${cls(t.net)}">${Math.round(t.net).toLocaleString('ja-JP')}</b></summary><table>${t.ex.map(e=>`<tr><td>${e.time}</td><td>${e.side>0?'買':'売'}</td><td>${e.qty}株</td><td>@${e.price.toLocaleString('ja-JP')}</td></tr>`).join('')}</table>${jh(t)}</details>`).join('')}
 function summary(){const s=stats(VIEW);if(!VIEW.length)return'データがありません';
  const g=(L,t)=>grp(VIEW,L).sort((a,b)=>a.k<b.k?-1:1).map(r=>`${r.k}: ${r.n}回 勝率${(r.w/r.n*100).toFixed(0)}% ${yen(r.p)}`).join('\n');
@@ -130,14 +130,14 @@ drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleav
 drop.ondrop=()=>drop.classList.remove('on');
 $('#dsel').onchange=render;$('#ssel').onchange=render;$('#sym').onclick=e=>{const r=e.target.closest('tr[data-s]');if(r){$('#ssel').value=r.dataset.s;render()}};['dragover','drop'].forEach(n=>document.addEventListener(n,e=>{e.preventDefault();if(n=='drop'&&e.dataTransfer.files.length)readFiles([...e.dataTransfer.files])}));
 $('#clear').onclick=()=>{if($('#clear').dataset.arm){EX=[];save();render();$('#clear').textContent='全データ削除';delete $('#clear').dataset.arm;$('#msg').textContent='削除しました'}else{$('#clear').dataset.arm=1;$('#clear').textContent='もう一度押すと削除';setTimeout(()=>{delete $('#clear').dataset.arm;$('#clear').textContent='全データ削除'},3000)}};
-$('#summ').onclick=()=>setPrompt('trade');
+
 $('#sample').onclick=()=>{const S=[['7203','トヨタ',3100],['8306','三菱UFJ',1900],['9984','ソフトバンクG',8400],['9101','日本郵船',4200]];let id=0;
  ['2026/09/28','2026/09/29','2026/09/30'].forEach(d=>{let m=541;const T=x=>pad(x/60|0)+':'+pad(x%60)+':'+pad(Math.random()*60|0);
   for(let i=0;i<40&&m<880;i++){const [c,n,p]=S[Math.random()*4|0],q=100*(1+(Math.random()*3|0)),dir=Math.random()<.5?1:-1,mv=Math.round(p*(Math.random()-.46)*.006);
    EX.push({id:'s'+id++,date:d,time:T(m),sym:c,name:n,side:dir,qty:q,price:p,fee:0},{id:'s'+id++,date:d,time:T(m+1+(Math.random()*8|0)),sym:c,name:n,side:-dir,qty:q,price:p+dir*mv,fee:0});m+=3+(Math.random()*9|0)}});
  render();$('#msg').textContent='サンプルを表示中です。実データを読み込む前に「全データ削除」を押してください'};
 
-const JF=[['stop','損切りライン'],['why_in','買い(エントリー)の理由'],['why_out','売り(決済)の理由'],['memo','備考・そのときの気持ち']];
+const JF=[['setup','セットアップ(例:GU後の押し)'],['stop','損切りライン'],['why_in','買い(エントリー)の理由'],['why_out','売り(決済)の理由'],['memo','備考・そのときの気持ち']];
 const jh=t=>{const k=t.date+'|'+t.sym+'|'+t.start,j=lsGet('jn',{})[k]||{};return `<div class="jn">${JF.map(([f,l])=>`<label>${l}<input data-jk="${esc(k)}" data-jf="${f}" value="${esc(j[f]||'')}"></label>`).join('')}</div>`};
 document.addEventListener('change',e=>{const i=e.target.closest('input[data-jk]');if(!i)return;const J=lsGet('jn',{});(J[i.dataset.jk]??={})[i.dataset.jf]=i.value;lsSet('jn',J)});
 $('#start').value=lsGet('start','');$('#start').onchange=()=>{lsSet('start',$('#start').value);render()};
@@ -145,5 +145,39 @@ $('#mc').oninput=()=>{const n=window.NAMEOF&&NAMEOF($('#mc').value.trim().toUppe
 $('#madd').onclick=()=>{const g=i=>$('#m'+i).value,sym=g('c').trim().toUpperCase(),qty=+g('q'),price=+g('p'),tt=g('t')||'09:00';
  if(!g('d')||!sym||!qty||!price){$('#msg').textContent='日付・コード・株数・価格を入力してください';return}
  EX.push({id:'m'+Date.now()+Math.random(),date:g('d').replace(/-/g,'/'),time:tt.length==5?tt+':00':tt,sym,name:$('#mn').value.trim()||sym,side:g('s')=='b'?1:-1,qty,price,fee:+g('f')||0});save();render();$('#msg').textContent='約定を追加しました(売買が対になるとトレードとして集計されます)'};
-PROMPTS.trade=()=>VIEW.length?summary():'(収支タブにデータがありません。CSVを読み込むか手入力してください)';
+
+/* 市場環境 / セクター / セットアップ × 成績、セッション状況、AI用プロンプト */
+let HIST={},SECMAP={};
+(async()=>{try{HIST=(await(await fetch('data/hist.json')).json()).n225||{}}catch(e){}try{(await(await fetch('data/universe.json')).json()).forEach(u=>SECMAP[u.code]=u.sector)}catch(e){}if(EX.length)render()})();
+const REG=d=>{const c=HIST[d.replace(/\//g,'-')];return c==null?'不明(日経データなし)':c>0.5?'上昇相場(日経 +0.5%超)':c<-0.5?'下降相場(日経 -0.5%未満)':'レンジ(日経 ±0.5%以内)'};
+const JN=t=>(lsGet('jn',{})[t.date+'|'+t.sym+'|'+t.start])||{};
+function streakInfo(C){const days={};C.forEach(t=>(days[t.date]??=[]).push(t));const rows=Object.entries(days).sort((a,b)=>a[0]<b[0]?-1:1).map(([d,a])=>{a.sort((x,y)=>x.start<y.start?-1:1);let run=0,mx=0;a.forEach(t=>{if(t.net<0){run++;mx=Math.max(mx,run)}else run=0});return {d,net:a.reduce((x,t)=>x+t.net,0),n:a.length,mx,end:run}});return rows}
+function extra(L,C,S,P){
+ const sortK=(a,b)=>a.k<b.k?-1:1;
+ $('#mktpnl').innerHTML=tbl(grp(L,t=>REG(t.date)).sort(sortK),'市場環境')+'<div class="mu">日経平均の前日比で分類(過去1年分のデータがある日のみ)。期間・銘柄の絞込を反映します。</div>';
+ $('#secpnl').innerHTML=tbl(grp(L,t=>SECMAP[t.sym]||'不明').sort((a,b)=>b.p-a.p),'業種')+'<div class="mu">東証33業種(銘柄一覧から取得)で分類します。</div>';
+ $('#setuppnl').innerHTML=tbl(grp(L,t=>JN(t).setup||'未設定').sort((a,b)=>b.p-a.p),'セットアップ')+'<div class="mu">下のトレード一覧を開き、日誌の「セットアップ」欄に名前を入れると、ここで勝率・損益を比較できます。</div>';
+ const R=streakInfo(C),last=R[R.length-1];if(!last){$('#status').innerHTML='<div class="mu">データなし</div>';return}
+ const hist=R.slice(0,-1),bad=hist.filter(x=>x.mx>=Math.max(2,last.end)),avgAll=hist.length?hist.reduce((a,x)=>a+x.net,0)/hist.length:0,avgBad=bad.length?bad.reduce((a,x)=>a+x.net,0)/bad.length:0;
+ $('#status').innerHTML=`<div class="kg" style="grid-template-columns:repeat(2,1fr)"><div><small>最新日</small><b>${last.d}</b></div><div><small>損益</small><b class="${cls(last.net)}">${yen(last.net)}</b></div><div><small>トレード数</small><b>${last.n}</b></div><div><small>現在の連敗</small><b class="${last.end>=3?'dn':''}">${last.end}回</b></div></div>`
+ +(hist.length?`<div>過去${hist.length}日のうち、${Math.max(2,last.end)}連敗以上になった日は ${bad.length}日。その日の平均損益 <b class="${cls(avgBad)}">${bad.length?yen(avgBad):'—'}</b>(全日平均 ${yen(avgAll)})</div>`:'<div class="mu">過去日のデータがまだありません</div>')
+ +'<div class="mu" style="margin-top:3px">過去の自分のデータを表示するだけで、取引の可否を示すものではありません。</div>'}
+document.addEventListener('click',e=>{const b=e.target.closest('#subtabs button');if(!b)return;document.querySelectorAll('#subtabs button').forEach(x=>x.classList.toggle('on',x==b));document.querySelectorAll('.subg').forEach(g=>g.classList.toggle('hide',g.dataset.sub!=b.dataset.sub))});
+const lines=(rows,u)=>rows.map(r=>`${r.k}: ${r.n}回 勝率${(r.w/r.n*100).toFixed(0)}% 損益${Math.round(r.p).toLocaleString()}円 1回あたり${Math.round(r.p/r.n)}円`).join('\n');
+function tradeText(){const L=VIEW,s=stats(L);if(!L.length)return '';const DW='日月火水木金土',avg=a=>a.length?a.reduce((x,t)=>x+t.hold,0)/a.length:0;
+ const loss=L.filter(t=>t.net<0).sort((a,b)=>a.net-b.net).slice(0,10).map(t=>{const j=JN(t);return `${t.date} ${t.start} ${t.sym} ${t.name} ${Math.round(t.net)}円 保有${mmss(t.hold)} ${j.setup?'['+j.setup+']':''} 損切りライン:${j.stop||'-'} 買い理由:${j.why_in||'-'} 売り理由:${j.why_out||'-'} 気持ち:${j.memo||'-'}`}).join('\n');
+ return `【対象】${$('#dsel').value=='ALL'?'全期間':$('#dsel').value}${$('#ssel').value=='ALL'?'':' / '+$('#ssel').value}
+【全体】トレード${s.n}回 勝率${s.wr.toFixed(1)}% 損益${Math.round(s.net)}円 平均利益${Math.round(s.aw)}円 平均損失${Math.round(s.al)}円 PF${isFinite(s.pf)?s.pf.toFixed(2):'-'} 最大連敗${s.mc} 最大DD${Math.round(s.dd)}円 手数料${Math.round(s.fee)}円
+【保有時間】勝ち平均${mmss(avg(L.filter(t=>t.net>0)))} 負け平均${mmss(avg(L.filter(t=>t.net<0)))}
+【時間帯別(30分)】\n${lines(grp(L,band).sort((a,b)=>a.k<b.k?-1:1))}
+【保有時間別】\n${lines(grp(L,t=>hb(t.hold)).sort((a,b)=>HB.indexOf(a.k)-HB.indexOf(b.k)))}
+【銘柄別】\n${lines(grp(L,t=>t.sym+' '+t.name).sort((a,b)=>b.p-a.p).slice(0,15))}
+【曜日別】\n${lines(grp(L,t=>DW[new Date(t.date.replace(/\//g,'-')).getDay()]))}
+【市場環境別】\n${lines(grp(L,t=>REG(t.date)))}
+【業種別】\n${lines(grp(L,t=>SECMAP[t.sym]||'不明').sort((a,b)=>b.p-a.p).slice(0,10))}
+【セットアップ別】\n${lines(grp(L,t=>JN(t).setup||'未設定'))}
+【損失の大きいトレード(日誌つき)】\n${loss||'なし'}`}
+const TI='あなたは日本株デイトレードの振り返りアシスタントです。以下の集計データだけを根拠に、事実ベースで整理してください。売買の推奨はせず、データにないことは推測と明示してください。\n依頼: ';
+const TK={t_sum:'今日(または対象期間)の総括。良かった点・悪かった点を数字で挙げてください。',t_loss:'負けトレードに共通するパターン(時間帯・保有時間・銘柄・市場環境・日誌の記述)を探してください。',t_time:'時間帯ごとの成績から、自分が強い時間帯と弱い時間帯を整理してください。',t_sym:'銘柄・業種ごとの成績から、得意な銘柄と苦手な銘柄の傾向を整理してください。',t_fix:'次回に向けた改善ポイントを、数字の根拠つきで3つまで挙げてください(ルールとして守れる形で)。'};
+Object.keys(TK).forEach(k=>PROMPTS[k]=()=>VIEW.length?TI+TK[k]+'\n\n'+tradeText():'(収支タブにデータがありません。CSVを読み込むか手入力してください)');
 render();
