@@ -51,9 +51,11 @@ def daily(sym):
     q = d["indicators"]["quote"][0]; m = d["meta"]
     R = [b for b in zip(q["open"], q["high"], q["low"], q["close"], q["volume"]) if None not in (b[1], b[2], b[3])]
     price = m.get("regularMarketPrice") or R[-1][3]; v = [b[4] or 0 for b in R[:-1]]
-    return build(price, R[-2][3], R[-1][0] or price, R[-1][1], R[-1][2], R[-1][4] or 0, 0, sum(v) / len(v) if v else 0, None,
+    r = build(price, R[-2][3], R[-1][0] or price, R[-1][1], R[-1][2], R[-1][4] or 0, 0, sum(v) / len(v) if v else 0, None,
                  (None, None, None), sum(b[1] - b[2] for b in R[:-1]) / max(1, len(R) - 1), R[-2][1], R[-2][2],
                  m.get("fiftyTwoWeekHigh"), m.get("fiftyTwoWeekLow"), None)
+    r["_n"] = m.get("longName") or m.get("shortName")
+    return r
 
 def intraday(sym):
     d = json.loads(get(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range=5d&interval=1m"))["chart"]["result"][0]
@@ -71,9 +73,11 @@ def intraday(sym):
     vwap = sum((b[2] + b[3] + b[4]) / 3 * (b[5] or 0) for b in T) / vol if vol else None
     ch = lambda n: (T[-1][4] / T[-1 - n][4] - 1) * 100 if len(T) > n else None
     st = max(1, len(T) // 60)
-    return build(price, P[-1][4], T[0][1] or T[0][4], max(b[2] for b in T), min(b[3] for b in T), vol, pv,
+    r = build(price, P[-1][4], T[0][1] or T[0][4], max(b[2] for b in T), min(b[3] for b in T), vol, pv,
                  sum(vols) / len(vols) if vols else 0, vwap, (ch(1), ch(5), ch(15)), sum(rngs) / len(rngs) if rngs else None,
                  max(b[2] for b in P), min(b[3] for b in P), m.get("fiftyTwoWeekHigh"), m.get("fiftyTwoWeekLow"), [b[4] for b in T[::st]])
+    o15 = T[:15]; r["orh"] = r2(max(b[2] for b in o15)); r["orl"] = r2(min(b[3] for b in o15)); r["orf"] = 1 if len(T) >= 15 else 0
+    return r
 
 def safe(f, sym):
     try: return f(sym)
@@ -98,9 +102,34 @@ def load_universe():
     except Exception as e:
         print("JPX銘柄一覧の取得に失敗。data/universe.json を使います:", e)
     for p in ("data/universe.json", os.path.join(OUT, "universe.json")):
-        try: return json.load(open(p, encoding="utf-8"))
+        try:
+            u = json.load(open(p, encoding="utf-8"))
+            if len(u) > 1000: print("キャッシュの銘柄一覧を使用:", len(u)); return u
         except Exception: pass
-    sys.exit("銘柄一覧がありません")
+    return None
+
+def brute_universe():
+    print("JPX一覧が使えないため、証券コード1301〜9999を総当たりで探索します(時間がかかります)")
+    codes = [str(c) for c in range(1301, 10000)]
+    with ThreadPoolExecutor(WORKERS) as ex:
+        res = list(ex.map(lambda c: safe(daily, c + ".T"), codes))
+    U, R = [], []
+    for c, r in zip(codes, res):
+        if r: U.append(dict(code=c, name=r.get("_n") or c, sector="未分類", market="")); R.append(r)
+    print("総当たりで見つかった銘柄:", len(U))
+    return U, R
+
+def n225_hist():
+    try:
+        d = json.loads(get("https://query1.finance.yahoo.com/v8/finance/chart/%5EN225?range=1y&interval=1d"))["chart"]["result"][0]
+        off = d["meta"].get("gmtoffset", 32400); out = {}; prev = None
+        for t, x in zip(d["timestamp"], d["indicators"]["quote"][0]["close"]):
+            if x is None: continue
+            if prev: out[datetime.datetime.utcfromtimestamp(t + off).strftime("%Y-%m-%d")] = round((x / prev - 1) * 100, 2)
+            prev = x
+        return out
+    except Exception:
+        return {}
 
 def news(names):
     seen, items = set(), []
@@ -147,13 +176,16 @@ def tags_score(h):
 
 def main():
     jst = datetime.timezone(datetime.timedelta(hours=9)); now = datetime.datetime.now(jst)
-    U = load_universe()
-    if MAX_STOCKS: U = U[:MAX_STOCKS]
+    U = load_universe(); pre = None
+    if U is None: U, pre = brute_universe()
+    if MAX_STOCKS: U = U[:MAX_STOCKS]; pre = None
     os.makedirs(OUT, exist_ok=True)
     t0 = time.time()
-    with ThreadPoolExecutor(WORKERS) as ex:
-        res = list(ex.map(lambda u: safe(daily, u["code"] + ".T"), U))
-    S = [dict(code=u["code"], name=u["name"], sector=u["sector"], market=u.get("market", ""), **r) for u, r in zip(U, res) if r]
+    if pre is None:
+        with ThreadPoolExecutor(WORKERS) as ex:
+            res = list(ex.map(lambda u: safe(daily, u["code"] + ".T"), U))
+    else: res = pre
+    S = [dict(code=u["code"], name=u["name"], sector=u["sector"], market=u.get("market", ""), **{k: v for k, v in r.items() if k != "_n"}) for u, r in zip(U, res) if r]
     print(f"日足: {len(S)}/{len(U)}銘柄 ({time.time() - t0:.0f}秒)")
     if len(S) < min(10, len(U)): sys.exit("取得できた銘柄が少なすぎるため中止します")
     for h in S: tags_score(h)
@@ -176,6 +208,7 @@ def main():
     names = sorted(((u["name"], u["code"]) for u in U if len(u["name"]) >= 3), key=lambda x: -len(x[0]))
     json.dump(dict(asof=now.strftime("%H:%M:%S"), items=news(names)), open(os.path.join(OUT, "news.json"), "w", encoding="utf-8"), ensure_ascii=False)
     json.dump(events(now), open(os.path.join(OUT, "events.json"), "w", encoding="utf-8"), ensure_ascii=False)
+    json.dump(dict(asof=now.strftime("%Y-%m-%d %H:%M:%S"), n225=n225_hist()), open(os.path.join(OUT, "hist.json"), "w", encoding="utf-8"))
     json.dump(U, open(os.path.join(OUT, "universe.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
     print("完了", f"{time.time() - t0:.0f}秒")
 
