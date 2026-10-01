@@ -25,11 +25,17 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install xlrd
+      - uses: actions/cache@v4
+        with:
+          path: data/universe.json
+          key: universe-${{ github.run_id }}
+          restore-keys: universe-
       - name: データ取得とサイト生成
         run: |
           mkdir -p _site/data
           cp -r index.html assets events.json _site/
           OUT=_site/data python scripts/fetch_data.py
+          cp _site/data/universe.json data/universe.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
