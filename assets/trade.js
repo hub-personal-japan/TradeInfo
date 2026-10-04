@@ -1,6 +1,7 @@
 /* 収支タブ: 約定履歴CSV/手入力 → FIFOでトレード単位に集計 → 成績・日誌。データはこのブラウザ内にのみ保存 */
 let EX=[];try{EX=JSON.parse(localStorage.getItem('ex')||'[]')}catch(e){}
 const save=()=>{try{localStorage.setItem('ex',JSON.stringify(EX))}catch(e){}};
+let TUI=Object.assign({sub:'d'},lsGet('tui',{}));TUI.p='';TUI.s='ALL';const saveTUI=()=>lsSet('tui',{sub:TUI.sub});
 const num=s=>parseFloat(String(s).replace(/[,円株\s]/g,''))||0;
 function decode(buf){try{return new TextDecoder('utf-8',{fatal:true}).decode(buf)}catch(e){return new TextDecoder('shift_jis').decode(buf)}}
 function parseCSV(t){const rows=[];let r=[],c='',q=false;for(let i=0;i<t.length;i++){const ch=t[i];
@@ -69,11 +70,11 @@ const chart=(rows,lf)=>{if(!rows.length)return'<div class="mu">データなし</
 function render(){
  const T=build().sort((a,b)=>a.date+a.start<b.date+b.start?-1:1),C=T.filter(t=>!t.open);
  const months=[...new Set(C.map(t=>t.date.slice(0,7)))].sort().reverse(),days=[...new Set(C.map(t=>t.date))].sort().reverse();
- const dsel=$('#dsel'),ssel=$('#ssel'),sy={};let pd=dsel.value;const ps=ssel.value;C.forEach(t=>sy[t.sym]=t.name);
- if(!dsel.dataset.set&&days.length){pd=days[0];dsel.dataset.set=1}
+ const dsel=$('#dsel'),ssel=$('#ssel'),sy={};let pd=TUI.p;const ps=TUI.s;C.forEach(t=>sy[t.sym]=t.name);
+ if(!pd||(pd!='ALL'&&!months.includes(pd)&&!days.includes(pd)))pd=days[0]||'ALL';
  dsel.innerHTML='<option value="ALL">全期間</option><optgroup label="月">'+months.map(m=>`<option>${m}</option>`).join('')+'</optgroup><optgroup label="日">'+days.map(d=>`<option>${d}</option>`).join('')+'</optgroup>';
  ssel.innerHTML='<option value="ALL">全銘柄</option>'+Object.keys(sy).sort().map(s=>`<option value="${esc(s)}">${esc(s+' '+sy[s])}</option>`).join('');
- keep(dsel,pd);keep(ssel,ps);$('#sample').classList.toggle('hide',EX.length>0);
+ keep(dsel,pd);keep(ssel,ps);TUI.p=dsel.value;TUI.s=ssel.value;$('#sample').classList.toggle('hide',EX.length>0);
  const ids=['sum','tband','daily','monthly','cmp','sym','hold','dow','trades','mktpnl','secpnl','setuppnl','status'];
  if(!C.length){ids.forEach(i=>$('#'+i).innerHTML='');$('#sum').innerHTML='<div class="mu" style="padding:8px">約定履歴CSVを読み込むと、ここに成績が表示されます(画面にドロップしてもOK)。</div>';VIEW=[];return}
  const P=dsel.value,S=ssel.value,inP=t=>t.date.startsWith(P=='ALL'?'':P),inS=t=>S=='ALL'||t.sym==S;
@@ -122,20 +123,20 @@ ${g(t=>t.sym+' '+t.name)}
 
 async function readFiles(fs){let add=0,dup=0,errs=[];
  for(const f of fs){const r=importText(decode(await f.arrayBuffer()));if(r.err)errs.push(f.name+': '+r.err);else{add+=r.add;dup+=r.dup}}
- save();render();$('#msg').textContent=(add||!dup?`${add}件の約定を新規に取り込みました`:'新しい約定はありません(すべて取込済み)')+(add&&dup?`(重複${dup}件はスキップ)`:'')+(errs.length?' / '+errs.join(' / '):'')}
+ save();TUI.p='';TUI.s='ALL';render();$('#msg').textContent=(add||!dup?`${add}件の約定を新規に取り込みました`:'新しい約定はありません(すべて取込済み)')+(add&&dup?`(重複${dup}件はスキップ)`:'')+(errs.length?' / '+errs.join(' / '):'')}
 const drop=$('#drop'),fi=$('#file');
 drop.onclick=()=>fi.click();drop.onkeydown=e=>{if(e.key=='Enter'||e.key==' '){e.preventDefault();fi.click()}};
 fi.onchange=()=>{readFiles([...fi.files]);fi.value=''};
 drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleave=()=>drop.classList.remove('on');
 drop.ondrop=()=>drop.classList.remove('on');
-$('#dsel').onchange=render;$('#ssel').onchange=render;$('#sym').onclick=e=>{const r=e.target.closest('tr[data-s]');if(r){$('#ssel').value=r.dataset.s;render()}};['dragover','drop'].forEach(n=>document.addEventListener(n,e=>{e.preventDefault();if(n=='drop'&&e.dataTransfer.files.length)readFiles([...e.dataTransfer.files])}));
+$('#dsel').onchange=()=>{TUI.p=$('#dsel').value;render()};$('#ssel').onchange=()=>{TUI.s=$('#ssel').value;render()};$('#sym').onclick=e=>{const r=e.target.closest('tr[data-s]');if(r){TUI.s=TUI.s==r.dataset.s?'ALL':r.dataset.s;render()}};['dragover','drop'].forEach(n=>document.addEventListener(n,e=>{e.preventDefault();if(n=='drop'&&e.dataTransfer.files.length)readFiles([...e.dataTransfer.files])}));
 $('#clear').onclick=()=>{if($('#clear').dataset.arm){EX=[];save();render();$('#clear').textContent='全データ削除';delete $('#clear').dataset.arm;$('#msg').textContent='削除しました'}else{$('#clear').dataset.arm=1;$('#clear').textContent='もう一度押すと削除';setTimeout(()=>{delete $('#clear').dataset.arm;$('#clear').textContent='全データ削除'},3000)}};
 
 $('#sample').onclick=()=>{const S=[['7203','トヨタ',3100],['8306','三菱UFJ',1900],['9984','ソフトバンクG',8400],['9101','日本郵船',4200]];let id=0;
  ['2026/09/28','2026/09/29','2026/09/30'].forEach(d=>{let m=541;const T=x=>pad(x/60|0)+':'+pad(x%60)+':'+pad(Math.random()*60|0);
   for(let i=0;i<40&&m<880;i++){const [c,n,p]=S[Math.random()*4|0],q=100*(1+(Math.random()*3|0)),dir=Math.random()<.5?1:-1,mv=Math.round(p*(Math.random()-.46)*.006);
    EX.push({id:'s'+id++,date:d,time:T(m),sym:c,name:n,side:dir,qty:q,price:p,fee:0},{id:'s'+id++,date:d,time:T(m+1+(Math.random()*8|0)),sym:c,name:n,side:-dir,qty:q,price:p+dir*mv,fee:0});m+=3+(Math.random()*9|0)}});
- render();$('#msg').textContent='サンプルを表示中です。実データを読み込む前に「全データ削除」を押してください'};
+ TUI.p='';TUI.s='ALL';render();$('#msg').textContent='サンプルを表示中です。実データを読み込む前に「全データ削除」を押してください'};
 
 const JF=[['setup','セットアップ(例:GU後の押し)'],['stop','損切りライン'],['why_in','買い(エントリー)の理由'],['why_out','売り(決済)の理由'],['memo','備考・そのときの気持ち']];
 const jh=t=>{const k=t.date+'|'+t.sym+'|'+t.start,j=lsGet('jn',{})[k]||{};return `<div class="jn">${JF.map(([f,l])=>`<label>${l}<input data-jk="${esc(k)}" data-jf="${f}" value="${esc(j[f]||'')}"></label>`).join('')}</div>`};
@@ -149,10 +150,12 @@ $('#madd').onclick=()=>{const g=i=>$('#m'+i).value,sym=g('c').trim().toUpperCase
 /* 市場環境 / セクター / セットアップ × 成績、セッション状況、AI用プロンプト */
 let HIST={},SECMAP={};
 (async()=>{try{HIST=(await(await fetch('data/hist.json')).json()).n225||{}}catch(e){}try{(await(await fetch('data/universe.json')).json()).forEach(u=>SECMAP[u.code]=u.sector)}catch(e){}if(EX.length)render()})();
-const REG=d=>{const c=HIST[d.replace(/\//g,'-')];return c==null?'不明(日経データなし)':c>0.5?'上昇相場(日経 +0.5%超)':c<-0.5?'下降相場(日経 -0.5%未満)':'レンジ(日経 ±0.5%以内)'};
+const regLabel=c=>c>0.5?'上昇相場(日経 +0.5%超)':c<-0.5?'下降相場(日経 -0.5%未満)':'レンジ(日経 ±0.5%以内)';window.REGLABEL=regLabel;
+const REG=d=>{const c=HIST[d.replace(/\//g,'-')];return c==null?'不明(日経データなし)':regLabel(c)};
 const JN=t=>(lsGet('jn',{})[t.date+'|'+t.sym+'|'+t.start])||{};
 function streakInfo(C){const days={};C.forEach(t=>(days[t.date]??=[]).push(t));const rows=Object.entries(days).sort((a,b)=>a[0]<b[0]?-1:1).map(([d,a])=>{a.sort((x,y)=>x.start<y.start?-1:1);let run=0,mx=0;a.forEach(t=>{if(t.net<0){run++;mx=Math.max(mx,run)}else run=0});return {d,net:a.reduce((x,t)=>x+t.net,0),n:a.length,mx,end:run}});return rows}
 function extra(L,C,S,P){
+ $('#fchip').innerHTML=S=='ALL'?'':`<button id="fclr" class="on">銘柄「${esc(S)}」で絞込中 ×解除</button>`;
  const sortK=(a,b)=>a.k<b.k?-1:1;
  $('#mktpnl').innerHTML=tbl(grp(L,t=>REG(t.date)).sort(sortK),'市場環境')+'<div class="mu">日経平均の前日比で分類(過去1年分のデータがある日のみ)。期間・銘柄の絞込を反映します。</div>';
  $('#secpnl').innerHTML=tbl(grp(L,t=>SECMAP[t.sym]||'不明').sort((a,b)=>b.p-a.p),'業種')+'<div class="mu">東証33業種(銘柄一覧から取得)で分類します。</div>';
@@ -162,7 +165,8 @@ function extra(L,C,S,P){
  $('#status').innerHTML=`<div class="kg" style="grid-template-columns:repeat(2,1fr)"><div><small>最新日</small><b>${last.d}</b></div><div><small>損益</small><b class="${cls(last.net)}">${yen(last.net)}</b></div><div><small>トレード数</small><b>${last.n}</b></div><div><small>現在の連敗</small><b class="${last.end>=3?'dn':''}">${last.end}回</b></div></div>`
  +(hist.length?`<div>過去${hist.length}日のうち、${Math.max(2,last.end)}連敗以上になった日は ${bad.length}日。その日の平均損益 <b class="${cls(avgBad)}">${bad.length?yen(avgBad):'—'}</b>(全日平均 ${yen(avgAll)})</div>`:'<div class="mu">過去日のデータがまだありません</div>')
  +'<div class="mu" style="margin-top:3px">過去の自分のデータを表示するだけで、取引の可否を示すものではありません。</div>'}
-document.addEventListener('click',e=>{const b=e.target.closest('#subtabs button');if(!b)return;document.querySelectorAll('#subtabs button').forEach(x=>x.classList.toggle('on',x==b));document.querySelectorAll('.subg').forEach(g=>g.classList.toggle('hide',g.dataset.sub!=b.dataset.sub))});
+function applySub(){document.querySelectorAll('#subtabs button').forEach(x=>x.classList.toggle('on',x.dataset.sub==TUI.sub));document.querySelectorAll('.subg').forEach(g=>g.classList.toggle('hide',g.dataset.sub!=TUI.sub))}
+document.addEventListener('click',e=>{const b=e.target.closest('#subtabs button');if(!b)return;TUI.sub=b.dataset.sub;saveTUI();applySub()});
 const lines=(rows,u)=>rows.map(r=>`${r.k}: ${r.n}回 勝率${(r.w/r.n*100).toFixed(0)}% 損益${Math.round(r.p).toLocaleString()}円 1回あたり${Math.round(r.p/r.n)}円`).join('\n');
 function tradeText(){const L=VIEW,s=stats(L);if(!L.length)return '';const DW='日月火水木金土',avg=a=>a.length?a.reduce((x,t)=>x+t.hold,0)/a.length:0;
  const loss=L.filter(t=>t.net<0).sort((a,b)=>a.net-b.net).slice(0,10).map(t=>{const j=JN(t);return `${t.date} ${t.start} ${t.sym} ${t.name} ${Math.round(t.net)}円 保有${mmss(t.hold)} ${j.setup?'['+j.setup+']':''} 損切りライン:${j.stop||'-'} 買い理由:${j.why_in||'-'} 売り理由:${j.why_out||'-'} 気持ち:${j.memo||'-'}`}).join('\n');
@@ -180,4 +184,10 @@ function tradeText(){const L=VIEW,s=stats(L);if(!L.length)return '';const DW='�
 const TI='あなたは日本株デイトレードの振り返りアシスタントです。以下の集計データだけを根拠に、事実ベースで整理してください。売買の推奨はせず、データにないことは推測と明示してください。\n依頼: ';
 const TK={t_sum:'今日(または対象期間)の総括。良かった点・悪かった点を数字で挙げてください。',t_loss:'負けトレードに共通するパターン(時間帯・保有時間・銘柄・市場環境・日誌の記述)を探してください。',t_time:'時間帯ごとの成績から、自分が強い時間帯と弱い時間帯を整理してください。',t_sym:'銘柄・業種ごとの成績から、得意な銘柄と苦手な銘柄の傾向を整理してください。',t_fix:'次回に向けた改善ポイントを、数字の根拠つきで3つまで挙げてください(ルールとして守れる形で)。'};
 Object.keys(TK).forEach(k=>PROMPTS[k]=()=>VIEW.length?TI+TK[k]+'\n\n'+tradeText():'(収支タブにデータがありません。CSVを読み込むか手入力してください)');
+document.addEventListener('click',e=>{const l=e.target.closest('#latest'),c=e.target.closest('#fclr');if(!l&&!c)return;if(l)TUI.p='';TUI.s='ALL';render()});
+$('#exp').onclick=()=>{const data={v:1,ex:EX,jn:lsGet('jn',{}),start:lsGet('start',''),stars:lsGet('stars',[])},a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data)],{type:'application/json'}));a.download='daytrade-backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();$('#msg').textContent='バックアップを保存しました'};
+$('#imp').onclick=()=>$('#impf').click();
+$('#impf').onchange=async()=>{try{const d=JSON.parse(await $('#impf').files[0].text()),seen=new Set(EX.map(e=>e.id));let n=0;(d.ex||[]).forEach(e=>{if(!seen.has(e.id)){EX.push(e);n++}});save();if(d.jn)lsSet('jn',{...lsGet('jn',{}),...d.jn});if(d.start&&!lsGet('start',''))lsSet('start',d.start);if(d.stars){STARS=[...new Set([...STARS,...d.stars])];saveStars()}TUI.p='';TUI.s='ALL';render();$('#msg').textContent=n+'件の約定を読み込みました'}catch(e){$('#msg').textContent='読み込めませんでした'}$('#impf').value=''};
+window.EDGE=()=>{const C=build().filter(t=>!t.open),by=kf=>{const m=new Map();C.forEach(t=>{const k=kf(t),a=m.get(k)||{n:0,w:0,p:0};a.n++;if(t.net>0)a.w++;a.p+=t.net;m.set(k,a)});return m};return {n:C.length,code:by(t=>t.sym),sector:by(t=>SECMAP[t.sym]||'不明'),band:by(band),regime:by(t=>REG(t.date))}};
+applySub();
 render();
