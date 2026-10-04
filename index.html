@@ -4,8 +4,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;600&display=swap">
 <link rel="stylesheet" href="assets/style.css">
 </head><body>
-<header id="top"><b class="logo">DAYTRADE</b><button id="t-info" class="tab on">情報</button><button id="t-trade" class="tab">収支</button><span id="clock"></span><span id="mstate" class="st"></span><span class="mu" id="upd"></span><span class="mu" id="lv"></span><span style="flex:1"></span><span class="mu">次回 <span id="cd"></span></span><select id="rate" aria-label="更新間隔"><option value="30">30秒更新</option><option value="60" selected>60秒更新</option><option value="120">2分更新</option><option value="0">更新停止</option></select></header>
+<div id="hd">
+<header id="top"><b class="logo">DAYTRADE</b><button id="t-info" class="tab on">情報</button><button id="t-trade" class="tab">収支</button><span id="clock"></span><span id="mstate" class="st"></span><span class="mu" id="upd"></span><button id="lv" class="lvb" title="クリックでライブ取得の接続設定・診断">ライブ: 接続中…</button><span style="flex:1"></span><span class="mu">次回 <span id="cd"></span></span><select id="rate" aria-label="更新間隔"><option value="5">5秒(最速)</option><option value="10">10秒</option><option value="30">30秒</option><option value="60">60秒</option><option value="0">停止</option></select><button id="rst" title="各項目の大きさ・列の幅を初期状態に戻します">表示の大きさを初期化</button></header>
 <div id="ticker"></div>
+</div>
 <div id="wrap">
 <div id="main">
 <div id="v-info">
@@ -14,38 +16,43 @@
 <section class="p"><h3>指数・市場</h3><div id="idxl"></div></section>
 <section class="p"><h3>セクター<span>売買代金加重の騰落率</span></h3><div id="secl"></div></section>
 <section class="p"><h3>今日の予定</h3><div id="ev" class="ev"></div></section>
-<section class="p"><h3>★WATCH<span>ライブ取得の対象</span></h3><div id="wl"></div></section>
+<section class="p"><h3>★ウォッチ<span>ライブ取得の対象</span></h3><div id="wl"></div></section>
+<section class="p"><h3>アラート<label class="mu"><input type="checkbox" id="snd"> 音</label></h3><div id="alerts"></div></section>
 </aside>
+<div class="spl" data-sp="lw" title="ドラッグで左の列の幅を変更"></div>
 <main id="center" class="pane">
 <div id="warn"></div>
-<section class="p"><h3>SCANNER<span id="scinfo"></span></h3>
+<section class="p" id="scanner"><div id="scbar"><h3>スキャナー<span id="scinfo"></span></h3>
 <div class="row" id="modes"></div>
 <div class="row"><input id="aq" placeholder="全銘柄から検索(コード・銘柄名・業種)" aria-label="銘柄検索"><label class="mu">売買代金<select id="mv" aria-label="売買代金の下限"><option value="0">制限なし</option><option value="0.1">0.1億以上</option><option value="1">1億以上</option><option value="5">5億以上</option><option value="10">10億以上</option></select></label><button id="apv">前へ</button><button id="anx">次へ</button></div>
+<div class="row" id="fbar"><label class="mu">業種<select data-f="sec" aria-label="業種"></select></label><label class="mu">市場<select data-f="mk" aria-label="市場"></select></label><label class="mu">株価<input data-f="pmin" type="number" placeholder="下限" style="width:72px;flex:none">〜<input data-f="pmax" type="number" placeholder="上限" style="width:72px;flex:none"></label><label class="mu">前日比%<input data-f="cmin" type="number" placeholder="下限" style="width:64px;flex:none">〜<input data-f="cmax" type="number" placeholder="上限" style="width:64px;flex:none"></label><label class="mu">出来高倍率≥<input data-f="vr" type="number" step="0.5" style="width:56px;flex:none"></label><label class="mu">GAP(絶対値)≥<input data-f="gap" type="number" step="0.5" style="width:56px;flex:none"></label><label class="mu">熱さ≥<input data-f="hs" type="number" style="width:56px;flex:none"></label><label class="mu"><input type="checkbox" data-f="star">★のみ</label><label class="mu"><input type="checkbox" data-f="news">ニュースあり</label><button id="frs">絞込をリセット</button></div></div>
 <div id="scT" class="tbl-wide"></div><div id="scC" class="cards"></div></section>
-<section class="p"><h3>NEWS<span id="nwt"></span></h3><div id="news"></div></section>
+<section class="p" id="newsp"><h3>ニュース<span id="nwt"></span></h3><div id="news"></div></section>
 </main>
 </div>
 <div id="v-trade" class="pane hide">
-<div id="bar"><div id="drop" tabindex="0" role="button">約定履歴CSV取込(画面にドロップも可)</div><input type="file" id="file" accept=".csv,.txt" multiple class="hide"><select id="dsel" aria-label="期間"></select><select id="ssel" aria-label="銘柄"></select><label class="mu">開始資産 <input id="start" type="number" placeholder="円" style="width:110px"></label><button id="sample">サンプル</button><button id="clear">全データ削除</button><span id="strip"></span><span id="msg"></span></div>
-<div class="tg2"><section class="p"><h3>損益サマリー<span id="sumt"></span></h3><div id="sum"></div></section><section class="p"><h3>SESSION STATUS<span>過去の自分のデータ</span></h3><div id="status"></div></section></div>
-<div class="subtabs" id="subtabs"><button data-sub="d" class="on">日別・月別</button><button data-sub="s">銘柄別</button><button data-sub="t">時間帯</button><button data-sub="w">曜日</button><button data-sub="m">市場環境</button><button data-sub="c">セクター</button><button data-sub="u">セットアップ</button></div>
+<div id="thd"><div id="bar"><div id="drop" tabindex="0" role="button">約定履歴CSV取込(画面にドロップも可)</div><input type="file" id="file" accept=".csv,.txt" multiple class="hide"><select id="dsel" aria-label="期間"></select><select id="ssel" aria-label="銘柄"></select><label class="mu">開始資産 <input id="start" type="number" placeholder="円" style="width:110px;flex:none"></label><button id="sample">サンプル</button><button id="clear">全データ削除</button><button id="latest" title="最新の取引日・全銘柄に戻す">最新日</button><span id="fchip"></span><button id="exp" title="取引データ・日誌・設定をファイルに保存">バックアップ保存</button><button id="imp">読込</button><input type="file" id="impf" accept=".json" class="hide"><span id="strip"></span><span id="msg"></span></div>
+<div class="subtabs" id="subtabs"><button data-sub="d" class="on">日別・月別</button><button data-sub="s">銘柄別</button><button data-sub="t">時間帯</button><button data-sub="w">曜日</button><button data-sub="m">市場環境</button><button data-sub="c">セクター</button><button data-sub="u">セットアップ</button></div></div>
+<div class="tg2"><section class="p"><h3>損益サマリー<span id="sumt"></span></h3><div id="sum"></div></section><section class="p"><h3>今日の状況<span>過去の自分のデータ</span></h3><div id="status"></div></section></div>
 <div class="subg" data-sub="d"><section class="p"><h3>日別損益(直近20日)</h3><div id="daily"></div></section><section class="p"><h3>月別成果</h3><div id="monthly"></div></section><section class="p"><h3>期間比較</h3><div id="cmp"></div></section></div>
 <div class="subg hide" data-sub="s"><section class="p"><h3>銘柄別<span>クリックで絞込</span></h3><div id="sym"></div></section></div>
 <div class="subg hide" data-sub="t"><section class="p"><h3>エントリー時刻別</h3><div id="tband"></div></section><section class="p"><h3>保有時間別</h3><div id="hold"></div></section></div>
 <div class="subg hide" data-sub="w"><section class="p"><h3>曜日別</h3><div id="dow"></div></section></div>
 <div class="subg hide" data-sub="m"><section class="p"><h3>市場環境 × 自分の成績<span>日経平均の騰落率で分類</span></h3><div id="mktpnl"></div></section></div>
 <div class="subg hide" data-sub="c"><section class="p"><h3>セクター × 自分の成績</h3><div id="secpnl"></div></section></div>
-<div class="subg hide" data-sub="u"><section class="p"><h3>セットアップ(Playbook) × 自分の成績<span>日誌のセットアップ欄で分類</span></h3><div id="setuppnl"></div></section></div>
-<section class="p" style="margin-top:3px"><h3>トレード一覧・日誌<span id="trt"></span></h3><div id="trades"></div></section>
-<details class="p" style="margin-top:3px"><summary>手入力で約定を追加(CSVが無い場合・補正用)</summary><div class="form"><label>日付<input id="md" type="date"></label><label>時刻<input id="mt" type="time" step="1"></label><label>コード<input id="mc" placeholder="7203"></label><label>銘柄名<input id="mn"></label><label>売買<select id="ms"><option value="b">買</option><option value="s">売</option></select></label><label>株数<input id="mq" type="number"></label><label>価格<input id="mp" type="number" step="0.1"></label><label>手数料<input id="mf" type="number"></label></div><div class="row"><button id="madd">追加</button></div></details>
+<div class="subg hide" data-sub="u"><section class="p"><h3>セットアップ × 自分の成績<span>日誌のセットアップ欄で分類</span></h3><div id="setuppnl"></div></section></div>
+<section class="p"><h3>トレード一覧・日誌<span id="trt"></span></h3><div id="trades"></div></section>
+<details class="p"><summary>手入力で約定を追加(CSVが無い場合・補正用)</summary><div class="form"><label>日付<input id="md" type="date"></label><label>時刻<input id="mt" type="time" step="1"></label><label>コード<input id="mc" placeholder="7203"></label><label>銘柄名<input id="mn"></label><label>売買<select id="ms"><option value="b">買</option><option value="s">売</option></select></label><label>株数<input id="mq" type="number"></label><label>価格<input id="mp" type="number" step="0.1"></label><label>手数料<input id="mf" type="number"></label></div><div class="row"><button id="madd">追加</button></div></details>
 </div>
 </div>
+<div class="spl" data-sp="rw" title="ドラッグで右のAI欄の幅を変更"></div>
 <aside id="right"><section class="p" id="aipane"><h3>AI<span>APIなし・プロンプトを作ってコピー</span></h3>
 <div id="aibtns"></div>
 <textarea id="ptx" aria-label="プロンプト" placeholder="上のボタンでプロンプトを作成します"></textarea>
 <div class="row"><button id="pcp">コピー</button><button id="pgpt">ChatGPT ↗</button><button id="pcl">Claude ↗</button><label class="mu"><input type="checkbox" id="splitc"> 分割表示</label></div><div class="mu" id="pmsg"></div></section></aside>
 </div>
-<aside id="drawer" class="hide"></aside>
+<div id="lvm" class="hide"></div>
+<aside id="drawer" class="hide"><div id="dsp" class="spl" data-sp="dw" title="ドラッグで幅を変更"></div><div id="dbody"></div></aside>
 <script src="assets/app.js"></script>
 <script src="assets/info.js"></script>
 <script src="assets/trade.js"></script>
