@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """全上場銘柄の株価・指数・ニュース・予定を取得して data/*.json に書き出す(標準ライブラリ+xlrd)。
 GitHub Actions から定期実行されます。手元で試す場合: python scripts/fetch_data.py"""
-import datetime, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
+import csv, datetime, io, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from email.utils import parsedate_to_datetime
@@ -11,7 +11,9 @@ MAX_STOCKS = int(os.environ.get("MAX_STOCKS", "0"))      # 0=全銘柄(動作確
 MIN_VAL = float(os.environ.get("MIN_VAL", "1"))          # 分足を取る候補の売買代金下限(億円)
 WORKERS = int(os.environ.get("WORKERS", "24"))
 UA = {"User-Agent": "Mozilla/5.0"}
-JPX = "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"
+JPX_PAGE = "https://www.jpx.co.jp/markets/statistics-equities/misc/01.html"
+JPX_URLS = ["https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xlsx",
+            "https://www.jpx.co.jp/markets/statistics-equities/misc/tvdivq0000001vg2-att/data_j.xls"]
 INDEX = [("^N225", "日経平均"), ("1306.T", "TOPIX(1306)"), ("2516.T", "グロース250(2516)"), ("NIY=F", "日経225先物(CME円)"),
          ("USDJPY=X", "ドル円"), ("^DJI", "NYダウ"), ("^IXIC", "NASDAQ"), ("^GSPC", "S&P500"), ("^SOX", "SOX指数"),
          ("^VIX", "VIX"), ("^TNX", "米10年債利回り"), ("CL=F", "原油(WTI)"), ("GC=F", "金"), ("000001.SS", "上海総合"), ("^HSI", "香港ハンセン")]
@@ -83,28 +85,59 @@ def safe(f, sym):
     try: return f(sym)
     except Exception: return None
 
-def load_universe():
-    try:
+def read_table(data):
+    if data[:2] == b"PK":                      # xlsx
+        import openpyxl
+        return list(openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True).active.iter_rows(values_only=True))
+    if data[:4] == b"\xd0\xcf\x11\xe0":          # 旧xls
         import xlrd
-        sh = xlrd.open_workbook(file_contents=get(JPX, 60)).sheet_by_index(0)
-        hdr = [str(c.value) for c in sh.row(0)]
-        ix = lambda n: next(i for i, h in enumerate(hdr) if n in h)
-        ic, inm, im, isec = ix("コード"), ix("銘柄名"), ix("市場"), ix("33業種区分")
-        out = []
-        for r in range(1, sh.nrows):
-            row = sh.row_values(r); code = str(row[ic]).strip()
-            if code.endswith(".0"): code = code[:-2]
-            mk = str(row[im])
-            if any(k in mk for k in ("プライム", "スタンダード", "グロース")):
-                out.append(dict(code=code, name=str(row[inm]), sector=str(row[isec]), market=re.sub(r"[（(].*", "", mk)))
-        if len(out) > 1000:
-            print(f"JPX銘柄一覧: {len(out)}銘柄"); return out
-    except Exception as e:
-        print("JPX銘柄一覧の取得に失敗。data/universe.json を使います:", e)
+        sh = xlrd.open_workbook(file_contents=data).sheet_by_index(0)
+        return [sh.row_values(r) for r in range(sh.nrows)]
+    for enc in ("utf-8-sig", "cp932"):          # csv
+        try: return list(csv.reader(io.StringIO(data.decode(enc))))
+        except Exception: pass
+    raise ValueError("形式を判別できません")
+
+def parse_rows(rows):
+    rows = [list(r) for r in rows if r and any(c not in (None, "") for c in r)]
+    hdr = [str(c or "") for c in rows[0]]
+    ix = lambda n: next(i for i, h in enumerate(hdr) if n in h)
+    ic, inm, im, isec = ix("コード"), ix("銘柄名"), ix("市場"), ix("33業種区分")
+    out = []
+    for row in rows[1:]:
+        c = row[ic]; code = str(int(c)) if isinstance(c, (int, float)) else str(c).strip()
+        mk = str(row[im] or "")
+        if code and any(k in mk for k in ("プライム", "スタンダード", "グロース")):
+            out.append(dict(code=code, name=str(row[inm]).strip(), sector=str(row[isec]).strip(), market=re.sub(r"[（(].*", "", mk)))
+    return out
+
+def jp_ok(u):
+    return len(u) > 1000 and sum(1 for x in u if any(ord(ch) > 127 for ch in x["name"])) > len(u) * 0.3
+
+def load_universe():
+    """日本語の銘柄名・33業種つきの一覧を取得する(JPX公開のExcel)。手元の universe.csv があれば最優先。"""
+    cands = []
+    if os.path.exists("universe.csv"): cands.append(("universe.csv", lambda: open("universe.csv", "rb").read()))
+    for u in JPX_URLS: cands.append((u, lambda u=u: get(u, 60)))
+    tried_page = False
+    while cands:
+        name, fn = cands.pop(0)
+        try:
+            out = parse_rows(read_table(fn()))
+            if len(out) > 1000: print(f"銘柄一覧: {len(out)}銘柄 ({name})"); return out
+            print("銘柄数が少ないため不採用:", name, len(out))
+        except Exception as e:
+            print("銘柄一覧の取得に失敗:", name, e)
+        if not cands and not tried_page:        # 固定URLが変わった場合に備え、JPXのページからリンクを探す
+            tried_page = True
+            try:
+                html = get(JPX_PAGE, 30).decode("utf-8", "ignore")
+                for l in re.findall(r'href="([^"]*data_j\.xlsx?)"', html): cands.append((l, lambda l=l: get(urllib.parse.urljoin(JPX_PAGE, l), 60)))
+            except Exception as e: print("JPXページの取得に失敗:", e)
     for p in ("data/universe.json", os.path.join(OUT, "universe.json")):
         try:
             u = json.load(open(p, encoding="utf-8"))
-            if len(u) > 1000: print("キャッシュの銘柄一覧を使用:", len(u)); return u
+            if jp_ok(u): print("キャッシュの銘柄一覧を使用:", len(u)); return u
         except Exception: pass
     return None
 
@@ -174,26 +207,47 @@ def tags_score(h):
     h["score"] = round(min(h["vr"], 10) * 2 + abs(h["chg"]) * 3 + abs(h["gap"]) * 1.5 + abs(h.get("vd", 0)), 1)
     h["tags"] = [t for t, ok in (("急騰", h["chg"] >= 3), ("急落", h["chg"] <= -3), ("出来高急増", h["vr"] >= 2), ("GU", h["gap"] >= 2), ("GD", h["gap"] <= -2)) if ok]
 
+MODE = os.environ.get("MODE", "auto")                      # auto / full / fast
+PREV = os.environ.get("PREV", "prev.json")                  # 前回公開された market.json(高速更新用)
+FULL_EVERY = int(os.environ.get("FULL_EVERY_MIN", "12"))   # 全銘柄の日足を取り直す間隔(分)
+
+def load_prev():
+    try:
+        d = json.load(open(PREV, encoding="utf-8"))
+        if d.get("stocks") and d.get("ts"): return d
+    except Exception: pass
+    return None
+
+def write(name, obj, **kw):
+    json.dump(obj, open(os.path.join(OUT, name), "w", encoding="utf-8"), ensure_ascii=False, **kw)
+
 def main():
     jst = datetime.timezone(datetime.timedelta(hours=9)); now = datetime.datetime.now(jst)
-    U = load_universe(); pre = None
-    if U is None: U, pre = brute_universe()
-    if MAX_STOCKS: U = U[:MAX_STOCKS]; pre = None
-    os.makedirs(OUT, exist_ok=True)
-    t0 = time.time()
-    if pre is None:
-        with ThreadPoolExecutor(WORKERS) as ex:
-            res = list(ex.map(lambda u: safe(daily, u["code"] + ".T"), U))
-    else: res = pre
-    S = [dict(code=u["code"], name=u["name"], sector=u["sector"], market=u.get("market", ""), **{k: v for k, v in r.items() if k != "_n"}) for u, r in zip(U, res) if r]
-    print(f"日足: {len(S)}/{len(U)}銘柄 ({time.time() - t0:.0f}秒)")
-    if len(S) < min(10, len(U)): sys.exit("取得できた銘柄が少なすぎるため中止します")
-    for h in S: tags_score(h)
+    os.makedirs(OUT, exist_ok=True); t0 = time.time()
+    prev = load_prev() if MODE != "full" and not MAX_STOCKS else None
+    fast = bool(prev) and (MODE == "fast" or time.time() - prev.get("full_ts", prev["ts"]) < FULL_EVERY * 60)
+    U = None
+    if fast:
+        S = prev["stocks"]; full_ts = prev.get("full_ts", prev["ts"]); nuni = prev.get("universe", len(S))
+        print(f"高速更新: 前回の全銘柄データ({len(S)}銘柄)を再利用し、注目銘柄の分足だけ更新します")
+    else:
+        U = load_universe(); pre = None
+        if U is None: U, pre = brute_universe()
+        if MAX_STOCKS: U = U[:MAX_STOCKS]; pre = None
+        if pre is None:
+            with ThreadPoolExecutor(WORKERS) as ex:
+                res = list(ex.map(lambda u: safe(daily, u["code"] + ".T"), U))
+        else: res = pre
+        S = [dict(code=u["code"], name=u["name"], sector=u["sector"], market=u.get("market", ""), **{k: v for k, v in r.items() if k != "_n"}) for u, r in zip(U, res) if r]
+        print(f"日足: {len(S)}/{len(U)}銘柄 ({time.time() - t0:.0f}秒)")
+        if len(S) < min(10, len(U)): sys.exit("取得できた銘柄が少なすぎるため中止します")
+        for h in S: tags_score(h)
+        full_ts = int(time.time()); nuni = len(U)
     pool = [h for h in S if h["val"] >= MIN_VAL]
     cand = {}
     for key, rev in (("chg", True), ("chg", False), ("vr", True), ("val", True), ("gap", True), ("gap", False), ("score", True)):
-        for h in sorted(pool, key=lambda x: x[key], reverse=rev)[:12]: cand[h["code"]] = h
-    for h in sorted(pool, key=lambda x: -x["score"])[:60]: cand[h["code"]] = h
+        for h in sorted(pool, key=lambda x: x[key], reverse=rev)[:15]: cand[h["code"]] = h
+    for h in sorted(pool, key=lambda x: -x["score"])[:100]: cand[h["code"]] = h
     with ThreadPoolExecutor(WORKERS) as ex:
         det = list(ex.map(lambda h: safe(intraday, h["code"] + ".T"), cand.values()))
     n_det = 0
@@ -203,14 +257,16 @@ def main():
     with ThreadPoolExecutor(8) as ex:
         ir = list(ex.map(lambda s: safe(intraday, s[0]) or safe(daily, s[0]), INDEX))
     idx = [dict(sym=s, name=n, **r) for (s, n), r in zip(INDEX, ir) if r]
-    json.dump(dict(asof=now.strftime("%Y-%m-%d %H:%M:%S"), ts=int(time.time()), count=len(S), universe=len(U), intraday=n_det, index=idx, stocks=S),
-              open(os.path.join(OUT, "market.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    ts = int(time.time()); asof = now.strftime("%Y-%m-%d %H:%M:%S")
+    write("market.json", dict(asof=asof, ts=ts, full_ts=full_ts, mode="fast" if fast else "full", count=len(S), universe=nuni, intraday=n_det, index=idx, stocks=S), separators=(",", ":"))
+    write("meta.json", dict(ts=ts, full_ts=full_ts, asof=asof, mode="fast" if fast else "full", count=len(S)))
+    if U is None: U = [dict(code=h["code"], name=h["name"], sector=h["sector"], market=h.get("market", "")) for h in S]
     names = sorted(((u["name"], u["code"]) for u in U if len(u["name"]) >= 3), key=lambda x: -len(x[0]))
-    json.dump(dict(asof=now.strftime("%H:%M:%S"), items=news(names)), open(os.path.join(OUT, "news.json"), "w", encoding="utf-8"), ensure_ascii=False)
-    json.dump(events(now), open(os.path.join(OUT, "events.json"), "w", encoding="utf-8"), ensure_ascii=False)
-    json.dump(dict(asof=now.strftime("%Y-%m-%d %H:%M:%S"), n225=n225_hist()), open(os.path.join(OUT, "hist.json"), "w", encoding="utf-8"))
-    json.dump(U, open(os.path.join(OUT, "universe.json"), "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
-    print("完了", f"{time.time() - t0:.0f}秒")
+    write("news.json", dict(asof=now.strftime("%H:%M:%S"), items=news(names)))
+    write("events.json", events(now))
+    write("hist.json", dict(asof=asof, n225=n225_hist()))
+    write("universe.json", U, separators=(",", ":"))
+    print("完了", "高速" if fast else "全銘柄", f"{time.time() - t0:.0f}秒")
 
 if __name__ == "__main__":
     main()
