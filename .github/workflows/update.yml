@@ -1,9 +1,13 @@
 name: update-site
 on:
   schedule:
-    - cron: "*/15 0-7 * * 1-5"   # 平日 9:00〜16:59(JST)に約15分ごと(GitHub側の遅延あり)
+    - cron: "*/5 0-7 * * 1-5"    # 平日 9:00〜16:59(JST)に5分ごと(GitHubの最短間隔。混雑時は遅れます)
     - cron: "40 8 * * 1-5"       # 17:40(JST) 終値確定後
   workflow_dispatch:             # 手動実行
+    inputs:
+      mode:
+        description: "auto=自動 / full=全銘柄を取り直す / fast=注目銘柄だけ"
+        default: "auto"
   push:
     branches: [main]
 permissions:
@@ -24,17 +28,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install xlrd
+      - run: pip install xlrd openpyxl
       - uses: actions/cache@v4
         with:
           path: data/universe.json
           key: universe-${{ github.run_id }}
           restore-keys: universe-
+      - name: 前回データの取得(高速更新用)
+        run: curl -fsSL "https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/data/market.json" -o prev.json || true
       - name: データ取得とサイト生成
         run: |
           mkdir -p _site/data
           cp -r index.html assets events.json _site/
-          OUT=_site/data python scripts/fetch_data.py
+          MODE=${{ inputs.mode || 'auto' }} OUT=_site/data python scripts/fetch_data.py
           cp _site/data/universe.json data/universe.json
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
