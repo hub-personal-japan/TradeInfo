@@ -101,13 +101,14 @@ async function live(){if(!D||!S.length||LVBUSY)return;if(LV.route&&LV.route.star
  catch(e){LV.ok=false;LV.n=0;LV.t=Date.now()}finally{LVBUSY=false;lvBadge();updInfo()}}
 function applyMarket(d){OLD={};IOLD={};const keep=new Map(),ki=new Map();
  if(D){S.forEach(h=>{OLD[h.code]=h.price;if(h.lt)keep.set(h.code,h)});D.index.forEach(i=>{IOLD[i.sym]=i.price;if(i.lt)ki.set(i.sym,i)})}
- D=d;S=d.stocks;BY=new Map(S.map(h=>[h.code,h]));
+ D=d;S=d.stocks;BY=new Map(S.map(h=>[h.code,h]));IDXDEF.forEach(([sy,nm])=>{if(!D.index.some(i=>i.sym==sy))D.index.push({sym:sy,name:nm,price:null,chg:0,chgv:0})});
  keep.forEach((o,c)=>{const h=BY.get(c);if(h)LKEEP.forEach(k=>{if(o[k]!==undefined)h[k]=o[k]})});D.index.forEach(i=>{const o=ki.get(i.sym);if(o)Object.assign(i,o)});
  if(!SEL||!BY.has(SEL))SEL=S[0]?S[0].code:'';prep();fillFilters();
  $('#warn').innerHTML=!d.count?'<div class="warn">データがまだありません。GitHub の Actions で update-site を実行してください。</div>':d.universe<1000?`<div class="warn">全銘柄の一覧を取得できていません(現在${d.universe}銘柄)。README の「全銘柄が出ないとき」を確認してください。</div>`:'';updInfo()}
+const IDXDEF=[['^N225','日経平均'],['1306.T','TOPIX(1306)'],['2516.T','グロース250(2516)'],['NIY=F','日経225先物(CME円)'],['USDJPY=X','ドル円'],['^DJI','NYダウ'],['^IXIC','NASDAQ'],['^GSPC','S&P500'],['^SOX','SOX指数'],['^VIX','VIX']];
 async function loadMarket(){if(LOADING)return;LOADING=true;
- try{const r=await fetch('data/market.json?t='+Date.now());if(!r.ok)throw 0;const d=await r.json();META=d.ts;LASTFULL=Date.now();applyMarket(d);renderAll();idb.set('market',d)}catch(e){if(!D)$('#upd').textContent='データ取得失敗'}finally{LOADING=false}}
-async function refresh(){if(D)live();const now=Date.now();if(now-LASTFETCH<15000)return;LASTFETCH=now;
+ try{const r=await fetch('data/market.json?t='+Date.now());if(!r.ok)throw 0;const d=await r.json();META=d.ts;LASTFULL=Date.now();applyMarket(d);renderAll();idb.set('market',d);if(!d.count)scanUniverse()}catch(e){if(!D){$('#upd').textContent='GitHubのデータなし';scanUniverse()}}finally{LOADING=false}}
+async function refresh(){if(D){live();sweep()}const now=Date.now();if(now-LASTFETCH<15000)return;LASTFETCH=now;
  try{const m=await(await fetch('data/meta.json?t='+now)).json();if(m.ts!==META)await loadMarket()}catch(e){if(now-LASTFULL>60000)await loadMarket()}}
 function fillFilters(){const secs=[...new Set(S.map(h=>h.sector))].sort(),mks=[...new Set(S.map(h=>h.market).filter(Boolean))];
  const sel=(k,arr,all)=>{const e=document.querySelector('#fbar [data-f="'+k+'"]');if(!e)return;e.innerHTML='<option value="">'+all+'</option>'+arr.map(x=>`<option>${esc(x)}</option>`).join('');e.value=ST.f[k]};
@@ -119,9 +120,40 @@ $('#frs').onclick=()=>{Object.keys(ST.f).forEach(k=>ST.f[k]=(k=='star'||k=='news
 /* あなたの実績(収支タブの取引データから) */
 const edgeTxt=a=>`勝率${Math.round(a.w/a.n*100)}% 平均${yen(a.p/a.n)}(${a.n}回)`;
 function myEdge(h,E){if(!E||!E.n)return '<span class="mu">取引データなし</span>';const c=E.code.get(h.code);if(c)return `<span class="edge">この銘柄 ${edgeTxt(c)}</span>`;const x=E.sector.get(h.sector);return x?`<span class="mu">業種 ${edgeTxt(x)}</span>`:'<span class="mu">未経験</span>'}
-async function loadNews(){
- try{const d=await(await fetch('data/news.json?t='+Date.now())).json();NEWS=d.items||[];$('#nwt').textContent=d.asof;$('#news').innerHTML=NEWS.map(newsRow).join('')||'<div class="mu">ニュースなし</div>';if(D)renderAll()}catch(e){}
- try{EV=await(await fetch('data/events.json?t='+Date.now())).json();LASTMIN=-1;renderEv()}catch(x){}}
+const KWD={'ストップ高':5,'急騰':4,'急落':4,'上方修正':4,'下方修正':4,'自社株買い':3,'増配':3,'減配':3,'決算':2,'日銀':3,'利上げ':3,'円安':2,'円高':2,'半導体':2,'提携':2,'買収':3,'TOB':4,'最高値':3};
+async function newsViaWorker(){const feeds=[['Yahoo!ニュース経済','https://news.yahoo.co.jp/rss/topics/business.xml'],['Googleニュース(株式)','https://news.google.com/rss/search?q='+encodeURIComponent('株式 相場 OR 日経平均 OR 急騰 OR 決算')+'&hl=ja&gl=JP&ceid=JP:ja']],items=[],seen=new Set();
+ for(const [src,u] of feeds){try{const t=await(await fetch(WK()+'/?url='+encodeURIComponent(u))).text(),x=new DOMParser().parseFromString(t,'text/xml');
+  x.querySelectorAll('item').forEach(it=>{const g=k=>{const e=it.querySelector(k);return e?e.textContent:''},title=g('title').trim(),link=g('link');if(!title||seen.has(title)||!link)return;seen.add(title);const ts=Date.parse(g('pubDate'))/1000||0,tags=Object.keys(KWD).filter(k=>title.includes(k)),codes=S.filter(h=>h.name.length>=3&&title.includes(h.name)).slice(0,4).map(h=>h.code);
+   items.push({title,link,src,ts,tags,codes,score:tags.reduce((a,k)=>a+KWD[k],0)+3*codes.length})})}catch(e){}}
+ return items.sort((a,b)=>b.score-a.score||b.ts-a.ts).slice(0,50)}
+async function loadNews(){let d=null;try{d=await(await fetch('data/news.json?t='+Date.now())).json()}catch(e){}
+ NEWS=(d&&d.items)||[];let at=d?d.asof:'';
+ if(!NEWS.length&&LV.worker&&S.length){try{NEWS=await newsViaWorker();at=new Date().toLocaleTimeString('ja-JP')+'(Worker経由)'}catch(e){}}
+ $('#nwt').textContent=at;$('#news').innerHTML=NEWS.map(newsRow).join('')||'<div class="mu">ニュースなし</div>';if(D)renderAll();
+ try{EV=await(await fetch('data/events.json?t='+Date.now())).json();if(!EV||!EV.today||!EV.today.length)throw 0}catch(x){EV={date:'',today:[['08:45','日経225先物 日中寄付'],['09:00','東証 寄付(前場)'],['11:30','前場引け'],['12:30','後場寄付'],['15:30','大引け']],upcoming:[]}}LASTMIN=-1;renderEv()}
+/* ---- Worker経由の全銘柄スキャン(約3,900銘柄を45銘柄ずつ並列取得し、現在値・出来高などを更新) ---- */
+window.SWP={n:0,tot:0};let SWEEPING=false,LASTSWEEP=0,SCANNING=false;
+const mOpen=()=>/前場|後場/.test($('#mstate').textContent);
+function applyRow(r){const [sym,price,prev,open,hi,lo,vol,t]=r,h=BY.get(String(sym).replace('.T',''));if(!h||price==null||!prev)return false;if(h.intra&&h.lt&&t&&h.lt>t)return false;
+ const o=open||price;h.price=r2(price);h.prev=r2(prev);h.open=r2(o);h.hi=r2(hi||price);h.lo=r2(lo||price);h.vol=Math.round(vol||0);h.val=r2(price*h.vol/1e8);h.chg=r2((price/prev-1)*100);h.chgv=r2(price-prev);h.gap=r2((o/prev-1)*100);h.gapv=r2(o-prev);h.fo=r2((price/o-1)*100);h.rng=r2(h.hi-h.lo);
+ if(h.atr)h.used=r2(h.rng/h.atr*100);if(h.avgvol&&t){const td=((t+32400)%86400)/60,tm=td<=690?td-540:td<750?150:td-750+150,e=h.avgvol*cumFrac(tm);if(e>0)h.vr=r2(h.vol/e)}
+ h.lt=t||h.lt;return true}
+async function sweep(force){if(SWEEPING||!S.length||!LV.worker)return;const gap=lsGet('swgap',60)*1000,now=Date.now();if(!force){if(!gap)return;if(now-LASTSWEEP<(mOpen()?gap:900000))return}
+ SWEEPING=true;LASTSWEEP=now;const codes=S.map(h=>h.code),B=[];for(let i=0;i<codes.length;i+=45)B.push(codes.slice(i,i+45).map(c=>c+'.T'));let ok=0,qi=0;SWP.n=0;SWP.tot=codes.length;
+ const w=async()=>{while(qi<B.length){const b=B[qi++];try{(await workerSnap(b)).forEach(r=>{if(applyRow(r))ok++})}catch(e){LV.msg='全銘柄スキャン: '+e.message}SWP.n=ok;lvBadge()}};
+ try{await Promise.all(Array.from({length:8},w))}finally{SWEEPING=false;SWP.n=ok;LV.sw=Date.now();if(ok){prep();renderAll()}lvBadge();updInfo()}}
+window.SWEEP=sweep;
+const mkStock=u=>{const p=u.price,pv=u.prev,o=u.open||p,hi=u.hi||p,lo=u.lo||p;return {code:u.code,name:u.name,sector:u.sector||'未分類',market:u.market||'',price:p,prev:pv,open:o,hi,lo,vol:u.vol||0,pv:0,avgvol:0,vr:0,val:r2(p*(u.vol||0)/1e8),chg:r2((p/pv-1)*100),chgv:r2(p-pv),gap:r2((o/pv-1)*100),gapv:r2(o-pv),fo:r2((p/o-1)*100),rng:r2(hi-lo),tags:[],score:0,lt:u.t}};
+async function scanUniverse(){if(!LV.worker||SCANNING)return;SCANNING=true;
+ try{$('#warn').innerHTML='<div class="warn">GitHubのデータがまだ無いため、Workerで全銘柄を探索しています(初回のみ・約1分)。名前は英語・業種は「未分類」になります。</div>';
+  let U=await idb.get('uni');
+  if(!U||U.length<500){const B=[];for(let c=1301;c<=9999;c+=45)B.push(Array.from({length:Math.min(45,10000-c)},(_,k)=>(c+k)+'.T'));U=[];let qi=0;
+   const w=async()=>{while(qi<B.length){const b=B[qi++];try{(await workerSnap(b)).forEach(r=>{if(r[1]!=null&&r[2])U.push({code:String(r[0]).replace('.T',''),name:r[8]||r[0],price:r[1],prev:r[2],open:r[3],hi:r[4],lo:r[5],vol:r[6],t:r[7]})})}catch(e){}SWP.n=U.length;SWP.tot=0}};
+   await Promise.all(Array.from({length:8},w));if(U.length>=500)idb.set('uni',U)}
+  if(U.length>=100){applyMarket({asof:'',ts:Date.now()/1000,count:U.length,universe:U.length,intraday:0,index:[],stocks:U.map(mkStock)});
+   $('#warn').innerHTML='<div class="warn">暫定表示: GitHubのデータが無く、Workerだけで取得しています(名前は英語・業種は未分類)。README の手順で Actions を実行すると日本語になります。</div>';renderAll();sweep(true);loadNews()}
+  else $('#warn').innerHTML='<div class="warn">Workerから株価を取得できませんでした。画面上部の「ライブ」ボタンで接続テストをしてください。</div>'}
+ finally{SCANNING=false}}
 document.addEventListener('click',e=>{if(TAB!='info'||!D)return;
  const st=e.target.closest('[data-star]');if(st){e.stopPropagation();const c=st.dataset.star;STARS=STARS.includes(c)?STARS.filter(x=>x!=c):[...STARS,c];saveStars();renderAll();nextM=0;return}
  const md=e.target.closest('[data-mode]');if(md){ST.mode=md.dataset.mode;ST.page=0;renderScanner();return}
