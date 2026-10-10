@@ -47,7 +47,7 @@ tr[data-c],tr[data-s]{cursor:pointer}tr[data-c]:hover,tr[data-s]:hover,tr.sel{ba
 #aipane textarea{flex:1;min-height:120px;width:100%;font:12px/1.5 monospace;resize:none}
 #aibtns{display:flex;flex-wrap:wrap;gap:4px;margin:2px 0}
 /* ドロワー(銘柄詳細) */
-#drawer{position:fixed;top:60px;bottom:3px;right:calc(var(--rw,300px) + 14px);width:var(--dw,min(580px,60vw));z-index:25;display:flex;background:var(--p);border:1px solid var(--ac)}
+#drawer{position:fixed;top:calc(var(--hh,60px) + 4px);bottom:3px;right:calc(var(--rw,300px) + 14px);width:var(--dw,min(580px,60vw));z-index:40;display:flex;background:var(--p);border:1px solid var(--ac)}
 #dbody{flex:1;min-width:0;overflow-y:auto;padding:0 8px 8px}
 .spl{cursor:col-resize;background:var(--bd);min-width:6px;touch-action:none}.spl:hover,.spl.drag{background:var(--ac)}
 #drawer .dh{position:sticky;top:0;background:#161c25;display:flex;justify-content:space-between;gap:8px;padding:3px 0;margin:0 -8px;padding:3px 8px;font-weight:600;z-index:1}
@@ -85,3 +85,11 @@ details table{color:var(--mu);margin:1px 0 3px}
 #aipane{resize:none}
 #alerts div{border-bottom:1px solid #1a212b;padding:1px 0}#alerts b{color:var(--ac)}
 .edge{color:var(--ac)}
+
+/* 注意報・開示・ニュース */
+.pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:3px}body[data-cw=c] .pair{grid-template-columns:1fr}
+#discp,#newsp{height:300px}body[data-w=s] #discp,body[data-w=s] #newsp{height:auto}
+.gh{background:#161c25;color:var(--ac);padding:0 6px;margin-top:3px;font-size:11.5px}
+.tg.warn{background:#3a1d1d;color:var(--up)}.tg.up{color:var(--up)}.tg.dn{color:var(--dn)}.tg.ac{color:var(--ac)}
+#selchip{margin-left:6px;color:var(--mu)}#selchip b{color:var(--ac)}
+#warnp td{white-space:normal}#warnp td:last-child{text-align:left}

@@ -107,4 +107,5 @@ $('#aibtns').onclick=e=>{const b=e.target.closest('button[data-pk]');if(b)setPro
 $('#pcp').onclick=copyPrompt;$('#pgpt').onclick=()=>openAI('gpt');$('#pcl').onclick=()=>openAI('claude');
 $('#lv').onclick=openLV;$('#rst').onclick=()=>{try{['sz','wd'].forEach(k=>localStorage.removeItem(k))}catch(e){}location.reload()};
 document.addEventListener('keydown',e=>{if(e.key=='Escape')document.dispatchEvent(new Event('esc'))});
+new ResizeObserver(()=>{const h=$('#hd');if(h)document.body.style.setProperty('--hh',h.offsetHeight+'px')}).observe($('#hd'));
 initPanels();setInterval(tick,1000);
