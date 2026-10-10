@@ -3,6 +3,7 @@
 GitHub Actions から定期実行されます。手元で試す場合: python scripts/fetch_data.py"""
 import csv, datetime, io, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
+from html.parser import HTMLParser
 from concurrent.futures import ThreadPoolExecutor
 from email.utils import parsedate_to_datetime
 
@@ -19,7 +20,9 @@ INDEX = [("^N225", "日経平均"), ("1306.T", "TOPIX(1306)"), ("2516.T", "グ�
          ("^VIX", "VIX"), ("^TNX", "米10年債利回り"), ("CL=F", "原油(WTI)"), ("GC=F", "金"), ("000001.SS", "上海総合"), ("^HSI", "香港ハンセン")]
 FEEDS = [("Yahoo!ニュース経済", "https://news.yahoo.co.jp/rss/topics/business.xml"),
          ("Googleニュース(株式)", "https://news.google.com/rss/search?q=" + urllib.parse.quote("株式 相場 OR 日経平均 OR 急騰 OR 決算") + "&hl=ja&gl=JP&ceid=JP:ja"),
-         ("Googleニュース(材料)", "https://news.google.com/rss/search?q=" + urllib.parse.quote("上方修正 OR 自社株買い OR ストップ高 OR 日銀 OR 円安") + "&hl=ja&gl=JP&ceid=JP:ja")]
+         ("Googleニュース(材料)", "https://news.google.com/rss/search?q=" + urllib.parse.quote("上方修正 OR 自社株買い OR ストップ高 OR 日銀 OR 円安") + "&hl=ja&gl=JP&ceid=JP:ja"),
+         ("Googleニュース(決算)", "https://news.google.com/rss/search?q=" + urllib.parse.quote("決算 OR 業績予想 OR 下方修正 OR 増配") + "&hl=ja&gl=JP&ceid=JP:ja"),
+         ("Googleニュース(相場)", "https://news.google.com/rss/search?q=" + urllib.parse.quote("日経平均 OR 東証 OR 米国株 OR 為替") + "&hl=ja&gl=JP&ceid=JP:ja")]
 KW = {"ストップ高": 5, "急騰": 4, "急落": 4, "上方修正": 4, "下方修正": 4, "自社株買い": 3, "増配": 3, "減配": 3, "決算": 2, "日銀": 3, "利上げ": 3,
       "円安": 2, "円高": 2, "半導体": 2, "先物": 1, "提携": 2, "M&A": 3, "買収": 3, "TOB": 4, "最高値": 3, "急伸": 3, "不祥事": 3, "訴訟": 2, "規制": 2}
 
@@ -179,8 +182,8 @@ def news(names):
             codes = [c for n, c in names if n in title][:4]
             score = sum(KW[k] for k in tags) + 3 * len(codes) + max(0, 6 - ((time.time() - ts) / 3600 if ts else 24))
             items.append(dict(title=title, link=link, src=src, ts=ts, tags=tags, codes=codes, score=round(score, 1)))
-    items.sort(key=lambda x: -x["score"])
-    return items[:50]
+    items.sort(key=lambda x: -x["ts"])      # 新しい順(重要度は画面側で並べ替え可能)
+    return items[:100]
 
 def us_dst(d):
     nth = lambda y, m, n: (lambda f: f + datetime.timedelta(days=(6 - f.weekday()) % 7 + 7 * (n - 1)))(datetime.date(y, m, 1))
@@ -202,6 +205,58 @@ def events(now):
     except Exception: pass
     today += [(t, n) for dd, t, n in up if dd == d0.isoformat()]
     return dict(date=d0.isoformat(), today=sorted(today), upcoming=sorted(x for x in up if x[0] != d0.isoformat()))
+
+TDNET = "https://www.release.tdnet.info/inbs/"
+
+class _TD(HTMLParser):
+    def __init__(s): super().__init__(); s.rows = []; s.row = None; s.cell = None; s.href = None
+    def handle_starttag(s, t, a):
+        a = dict(a)
+        if t == "tr": s.row = []; s.href = None
+        elif t in ("td", "th") and s.row is not None: s.cell = ""
+        elif t == "a" and s.row is not None and (a.get("href") or "").lower().endswith(".pdf"): s.href = a["href"]
+    def handle_data(s, d):
+        if s.cell is not None: s.cell += d
+    def handle_endtag(s, t):
+        if t in ("td", "th") and s.cell is not None and s.row is not None: s.row.append(s.cell.strip().replace("\u3000", " ")); s.cell = None
+        elif t == "tr" and s.row is not None: s.rows.append((s.row, s.href)); s.row = None
+
+def classify(t):
+    k = []
+    if "決算短信" in t or "決算説明" in t: k.append("決算")
+    if "業績予想" in t and ("修正" in t or "差異" in t): k.append("業績修正")
+    if "上方" in t: k.append("上方")
+    if "下方" in t: k.append("下方")
+    if "配当" in t: k.append("配当")
+    if "増配" in t: k.append("増配")
+    if "減配" in t or "無配" in t: k.append("減配")
+    if "自己株式" in t and "取得" in t: k.append("自社株買い")
+    if "株式分割" in t: k.append("株式分割")
+    if any(x in t for x in ("公開買付", "TOB", "合併", "株式取得", "子会社化", "業務提携", "資本提携", "事業譲渡")): k.append("M&A・提携")
+    return k
+
+def disclosures(now, days=3):
+    """東証TDnet(適時開示)の一覧から、直近の開示を取得し、タイトルの語句で独自に分類する。取得は低頻度(実行ごとに数リクエスト)。"""
+    items, seen = [], set()
+    for back in range(days):
+        d = now.date() - datetime.timedelta(days=back)
+        if d.weekday() >= 5: continue
+        got = 0
+        for page in range(1, 8):
+            url = f"{TDNET}I_list_{page:03d}_{d.strftime('%Y%m%d')}.html"
+            try: html = get(url, 20).decode("utf-8", "ignore")
+            except Exception: break
+            p = _TD(); p.feed(html); n = 0
+            for cells, href in p.rows:
+                if len(cells) < 4 or not re.fullmatch(r"\d{1,2}:\d{2}", cells[0]) or not re.fullmatch(r"[0-9A-Z]{5}", cells[1]): continue
+                key = (d, cells[0], cells[1], cells[3])
+                if key in seen: continue
+                seen.add(key); n += 1
+                items.append(dict(date=d.isoformat(), time=cells[0].zfill(5), code=cells[1][:4], name=cells[2], title=cells[3], url=urllib.parse.urljoin(TDNET, href) if href else "", tags=classify(cells[3])))
+            got += n
+            if n == 0: break
+    items.sort(key=lambda x: (x["date"], x["time"]), reverse=True)
+    return dict(asof=now.strftime("%Y-%m-%d %H:%M:%S"), items=items[:600])
 
 def tags_score(h):
     h["score"] = round(min(h["vr"], 10) * 2 + abs(h["chg"]) * 3 + abs(h["gap"]) * 1.5 + abs(h.get("vd", 0)), 1)
@@ -264,6 +319,9 @@ def main():
     names = sorted(((u["name"], u["code"]) for u in U if len(u["name"]) >= 3), key=lambda x: -len(x[0]))
     write("news.json", dict(asof=now.strftime("%H:%M:%S"), items=news(names)))
     write("events.json", events(now))
+    try: write("disclosures.json", disclosures(now))
+    except Exception as e:
+        print("適時開示の取得に失敗:", e); write("disclosures.json", dict(asof="", items=[]))
     write("hist.json", dict(asof=asof, n225=n225_hist()))
     write("universe.json", U, separators=(",", ":"))
     print("完了", "高速" if fast else "全銘柄", f"{time.time() - t0:.0f}秒")
