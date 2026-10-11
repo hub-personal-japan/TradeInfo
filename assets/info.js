@@ -1,7 +1,8 @@
 (()=>{
+let NEWS_T=0,NEWS_OK=null,DISC_T=0,DISC_OK=null,FLM=-1;
 let D=null,S=[],BY=new Map(),NEWS=[],DISC=[],DC={},DK={},NC={},SEL='',OLD={},IOLD={},SECW={},EV=null,OPEN=false,LASTMIN=-1;
 const ST=Object.assign({mode:'hot',q:'',page:0,minv:1},lsGet('st',{}));ST.f=Object.assign({sec:'',mk:'',pmin:'',pmax:'',cmin:'',cmax:'',vr:'',gap:'',hs:'',star:false,news:false},ST.f||{});
-const UI=lsGet('ui',{});SEL=UI.sel||'';OPEN=!!UI.open;let ALERTS=lsGet('alerts',[]),LASTFETCH=0,LASTFULL=0,META=0,LOADING=false,LVBUSY=false;
+const UI0=lsGet('ui',{}),UI=UI0.v==2?UI0:{};SEL=UI.sel||'';OPEN=!!UI.open&&!!UI.sel;let ALERTS=lsGet('alerts',[]),LASTFETCH=0,LASTFULL=0,META=0,LOADING=false,LVBUSY=false;
 const fp=n=>n==null?'—':fx(n,Number.isInteger(n)?0:1),sg=n=>n>0?'+':'';
 const fv=n=>n==null?'—':n>=1e4?(n/1e4).toFixed(n>=1e6?0:1)+'万':String(n);
 const clamp=(x,m)=>Math.min(Math.max(x,0),m),I=s=>D&&D.index.find(x=>x.sym==s);
@@ -48,12 +49,12 @@ function renderLeft(){const R=regime(),m=(l,v,note)=>`<div class="meter"><span s
  +`<div class="mu" style="margin-top:3px">値上がり ${R.up.toLocaleString()} / 値下がり ${R.dn.toLocaleString()} / 変わらず ${R.flat.toLocaleString()}(売買代金0.1億円以上 ${R.n.toLocaleString()}銘柄)</div>`
  +(R.theme?`<div>主戦場: <b class="ac">${esc(R.theme.k)}</b> ${pc(R.theme.w)}</div><div>注意: ${R.warn.map(s=>`<b>${esc(s.k)}</b> <span class="${cls(s.w)}">${pc(s.w)}</span>`).join(' / ')}</div>`:'');
  window.__R=R;
- $('#idxl').innerHTML='<table>'+D.index.map(i=>{const d=i.price<20?3:2;return `<tr><td>${esc(i.name)}</td><td>${fx(i.price,d)}</td><td class="${cls(i.chg)}">${pc(i.chg)}</td></tr>`}).join('')+'</table>';
+ $('#idxl').innerHTML='<table>'+D.index.map(i=>{const d=i.price<20?3:2;return `<tr><td>${esc(i.name)}</td><td>${i.price==null?'<span class="up">取得失敗</span>':fx(i.price,d)}</td><td class="${cls(i.chg)}">${pc(i.chg)}</td></tr>`}).join('')+'</table>';
  const sc=Object.values(SECW).filter(s=>s.val>=20).sort((a,b)=>b.w-a.w),top=sc.slice(0,6),bot=sc.slice(-6).reverse(),row=s=>`<tr><td>${esc(s.k)}</td><td>${arrow(s.w)}</td><td class="${cls(s.w)}">${pc(s.w)}</td></tr>`;
  $('#secl').innerHTML=`<table>${top.map(row).join('')}<tr><td colspan="3" class="mu">…</td></tr>${bot.map(row).join('')}</table>`;
  const W=STARS.map(c=>BY.get(c)).filter(Boolean);
  $('#wl').innerHTML=W.length?'<table>'+W.map(h=>`<tr data-c="${esc(h.code)}"><td>${esc(h.code)} ${esc(h.name)}</td><td class="${fl(h)}">${fp(h.price)}</td><td class="${cls(h.chg)}">${pc(h.chg)}</td><td>${star(h.code)}</td></tr>`).join('')+'</table>':'<div class="mu">スキャナーの☆を押すと、ここに登録されます</div>'}
-function renderTicker(){const R=window.__R||regime(),c=(l,v,k)=>`<span><small>${l}</small> <b class="${k||''}">${v}</b></span>`,x=s=>{const i=I(s);return i?c(i.name.replace(/\(.*\)/,''),fx(i.price,i.price<20?3:2)+' '+pc(i.chg),cls(i.chg)):''};
+function renderTicker(){const R=window.__R||regime(),c=(l,v,k)=>`<span><small>${l}</small> <b class="${k||''}">${v}</b></span>`,x=s=>{const i=I(s);return i?c(i.name.replace(/\(.*\)/,''),i.price==null?'取得失敗':fx(i.price,i.price<20?3:2)+' '+pc(i.chg),i.price==null?'up':cls(i.chg)):''};
  const f=I('NIY=F'),n=I('^N225'),o=[x('^N225'),x('1306.T'),x('2516.T'),x('USDJPY=X'),x('^SOX'),x('^VIX')];if(f&&n)o.splice(4,0,c('先物',`現物比 ${sg(f.price-n.price)}${fx(f.price-n.price,0)}円`,cls(f.price-n.price)));
  o.push(c('判定',R.label,R.tot>=60?'up':R.tot<=40?'dn':''));const E=window.EDGE?window.EDGE():null;if(E&&E.n){const j=new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Tokyo'})),bk=pad(j.getHours())+':'+(j.getMinutes()<30?'00':'30'),a=E.band.get(bk),nn=I('^N225'),rg=nn&&window.REGLABEL?E.regime.get(window.REGLABEL(nn.chg)):null;if(a)o.push(c('今の時間帯の自分',bk+'台 '+edgeTxt(a),cls(a.p)));if(rg)o.push(c('今日の相場での自分',edgeTxt(rg),cls(rg.p)))}if(R.theme)o.push(c('主戦場',R.theme.k,'ac'));$('#ticker').innerHTML=o.join('')}
 /* スキャナー */
@@ -74,7 +75,7 @@ function renderScanner(){
  const c=(l,v,k)=>`<span><small>${l}</small> <b class="${k||''}">${v}</b></span>`;
  $('#scC').innerHTML=R.map((h,i)=>`<div class="card" data-c="${esc(h.code)}"><div class="h"><span>${b+i+1}. ${esc(h.code)} ${esc(h.name)}</span><span><span class="${cls(h.chg)}">${fp(h.price)} ${pc(h.chg)}</span> 熱さ<b class="ac">${h.hs}</b> ${star(h.code)}</span></div><div class="c"><span class="mu">${esc(h.sector)}</span>${c('出来高',(h.vr||0).toFixed(1)+'倍')}${c('GAP',pc(h.gap),cls(h.gap))}${c('VWAP乖離',pc(h.vd),cls(h.vd))}${c('日経との差',pc(h.rs),cls(h.rs))}${c('売買代金',(h.val||0).toFixed(1)+'億')}${NC[h.code]?c('ニュース',NC[h.code]+'件'):''}</div><div>${myEdge(h,E)} ${why(h).map(t=>`<span class="tg">${esc(t)}</span>`).join('')}</div></div>`).join('')}
 /* ドロワー(銘柄詳細) */
-function renderDrawer(){lsSet('ui',{sel:SEL,open:OPEN});const dr=$('#drawer');if(!OPEN||!BY.has(SEL)){dr.classList.add('hide');return}dr.classList.remove('hide');const h=BY.get(SEL);
+function renderDrawer(){lsSet('ui',{v:2,sel:SEL,open:OPEN});const dr=$('#drawer');if(!OPEN||!BY.has(SEL)){dr.classList.add('hide');return}dr.classList.remove('hide');const h=BY.get(SEL);
  const kv=a=>'<div class="kg" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))">'+a.map(([k,v,c])=>`<div><small>${k}</small><b class="${c||''}">${v}</b></div>`).join('')+'</div>';
  const L=[['当日高値',h.hi],['当日安値',h.lo],['始値',h.open],['VWAP',h.vwap],['前日高値',h.pyh],['前日安値',h.pyl],['前日終値',h.prev],['オープニングレンジ高値(最初の15分)',h.orf?h.orh:null],['オープニングレンジ安値(最初の15分)',h.orf?h.orl:null],['ストップ高(値幅制限)',h.lup],['ストップ安(値幅制限)',h.ldn]].filter(x=>x[1]!=null);
  L.push(['● 現在値',h.price,1]);L.sort((a,b)=>b[1]-a[1]);
@@ -94,7 +95,7 @@ function drawerExtra(h){const w=h.warn||[],ds=DK[h.code]||[];
  return `<div style="margin-top:4px"><b>総合判定:</b> <b class="${h.jc||''}">${esc(h.jl||'')}</b> <span class="mu">(業種内 ${h.srk||'—'}位 / 業種平均との差 ${pc(h.rss)})</span></div>`
  +(w.length?`<div>${w.map(x=>`<span class="tg warn">${esc(x.k)}</span>`).join('')} <span class="mu">ストップ高${fp(h.lup)}円 / ストップ安${fp(h.ldn)}円</span></div>`:'')
  +(ds.length?`<h3 class="ac" style="margin:6px 0 2px;font-size:12.5px">適時開示(決算速報)</h3>${ds.slice(0,6).map(x=>`<div class="nw"><b class="ac">${esc(x.date.slice(5))} ${esc(x.time)}</b> <a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a> ${x.tags.map(t=>`<span class="tg ${DKIND[t]||''}">${esc(t)}</span>`).join('')}</div>`).join('')}`:'')}
-const tm=n=>n.ts?new Date(n.ts*1000).toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'}):'--:--';
+const tm=n=>{if(!n.ts)return '時刻不明';const d=new Date(n.ts*1000),z={timeZone:'Asia/Tokyo'},td=new Date().toLocaleDateString('ja-JP',z);return (d.toLocaleDateString('ja-JP',z)==td?'':d.toLocaleDateString('ja-JP',Object.assign({month:'numeric',day:'numeric'},z))+' ')+d.toLocaleTimeString('ja-JP',Object.assign({hour:'2-digit',minute:'2-digit',hour12:false},z))};
 const newsRow=n=>`<div class="nw"><b class="ac">${tm(n)}</b> <a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.title)}</a><br><small>${esc(n.src)} ${(n.tags||[]).map(t=>`<span class="tg">${esc(t)}</span>`).join('')} ${(n.codes||[]).map(c=>BY.get(c)?`<a href="#" data-c="${esc(c)}" class="ac">${esc(BY.get(c).name)}</a>`:'').join(' ')}</small></div>`;
 function renderEv(j){if(!EV)return;const now=j||new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Tokyo'})),m=now.getHours()*60+now.getMinutes();if(m==LASTMIN)return;LASTMIN=m;
  const hm=pad(now.getHours())+':'+pad(now.getMinutes());let nx=true;
@@ -110,8 +111,42 @@ function renderNews(){const m=lsGet('ns','t');$('#nsb').innerHTML=[['t','時系�
  const A=NEWS.slice().sort(m=='t'?(a,b)=>(b.ts||0)-(a.ts||0):(a,b)=>b.score-a.score||(b.ts||0)-(a.ts||0));let out='',last='';
  A.forEach(n=>{if(m=='t'){let g='時刻不明';if(n.ts){const d=new Date(n.ts*1000);g=d.toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric'})+' '+d.toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',hour12:false}).slice(0,2)+'時台'}if(g!=last){out+=`<div class="gh">${esc(g)}</div>`;last=g}}out+=newsRow(n)});
  $('#news').innerHTML=out||'<div class="mu">ニュースなし</div>'}
-function selChip(){const h=BY.get(SEL);$('#selchip').innerHTML=h?`選択中: <b>${esc(h.code)} ${esc(h.name)}</b> <button data-act="toggle">${OPEN?'詳細を閉じる ×':'詳細を開く'}</button>`:''}
-const renderAll=()=>{if(!D)return;prep();renderTicker();renderLeft();renderScanner();renderWarn();renderDisc();renderNews();renderDrawer();selChip()};
+function deselect(){OPEN=false;SEL='';lsSet('ui',{v:2,sel:'',open:false});renderScanner();renderDrawer();selChip()}
+function selChip(){const h=BY.get(SEL);$('#selchip').innerHTML=h?`選択中: <b>${esc(h.code)} ${esc(h.name)}</b> <button data-act="toggle">選択を解除 ×</button>`:''}
+const IDXREQ=[['^N225','日経平均'],['1306.T','TOPIX(1306)'],['NIY=F','日経先物'],['USDJPY=X','ドル円'],['^IXIC','NASDAQ'],['^SOX','SOX指数']];
+const isOpen=()=>/前場|後場/.test($('#mstate').textContent);
+const hmT=t=>new Date(t*1000).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit',hour12:false});
+const dayT=t=>new Date(t*1000).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric'});
+const sameDayT=t=>new Date(t*1000).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'})==new Date().toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'});
+/* 区分: ok=遅延(想定内) / ac=古い / up=非常に古い・取得失敗 / mu=場外。※Yahooのデータは約20分遅れで、「リアルタイム」ではありません */
+function freshOf(t,est){if(!t)return {c:'up',label:'データなし・取得失敗'};const now=Date.now()/1000,age=Math.round((now-t)/60),st=$('#mstate').textContent;
+ if(!isOpen())return {c:'mu',label:st=='昼休み'?`昼休み中(前場の値 ${hmT(t)})`:(sameDayT(t)?`場外: 本日の終値データ ${hmT(t)}`:`場外: 前営業日以前のデータ(${dayT(t)} ${hmT(t)})`)+(est?'(推定)':'')};
+ const sfx=est?'・GitHub取得時刻からの推定':'';
+ if(age<=25)return {c:'ok',label:`遅延 約${age}分(株価時刻 ${hmT(t)})${sfx}`};
+ if(age<=60)return {c:'ac',label:`古い: ${age}分前(${hmT(t)})・要注意${sfx}`};
+ return {c:'up',label:`非常に古い: ${age}分前(${hmT(t)})・売買判断に使わないでください${sfx}`}}
+const fb=o=>`<span class="fb ${o.c}">${esc(o.label)}</span>`;
+function renderFresh(){if(!D)return;const live=LV.ok&&LV.lt,t=live?LV.lt:(D.ts?D.ts-1200:0),f=freshOf(t,!live),nowS=Date.now()/1000;
+ const src=`取得元: Yahoo!ファイナンス${LV.ok?' / Cloudflare Worker(ライブ)':''}${LV.sw?' / 全銘柄スキャン':''} ※リアルタイムではなく約20分遅れ`,base=`<div class="fresh">${fb(f)} <span class="mu">${src}</span></div>`;
+ const miss=IDXREQ.filter(([x])=>{const i=I(x);return !i||i.price==null}).map(x=>x[1]),stale=S.filter(h=>h.lt&&isOpen()&&nowS-h.lt>3600).length;
+ const mw=miss.length?`<div class="warn">取得失敗・欠損: ${miss.map(esc).join('、')}(推測値は表示していません)</div>`:'';
+ $('#f-idx').innerHTML=base+mw;$('#f-reg').innerHTML=base+(miss.length?'<div class="warn">指数に欠損があるため、市場状態は参考値です</div>':'');$('#f-sec').innerHTML=base;$('#f-warn').innerHTML=base;$('#f-wl').innerHTML=base;
+ $('#f-scan').innerHTML=base+`<div class="mu">更新: GitHub ${hmT(D.ts)}(${Math.round((nowS-D.ts)/60)}分前・全${S.length.toLocaleString()}銘柄)${LV.sw?` / 全銘柄スキャン ${new Date(LV.sw).toLocaleTimeString('ja-JP')}`:''}${LV.ok?` / ライブ ${new Date(LV.t).toLocaleTimeString('ja-JP')}`:' / ライブ未接続'}${stale?` <span class="up">/ 株価が1時間以上古い銘柄 ${stale}件(取引停止・気配の可能性)</span>`:''}${LV.ok===false&&LV.msg?` <span class="up">/ ライブ失敗: ${esc(LV.msg)}</span>`:''}</div>`;
+ const nn=NEWS.length,newest=nn?Math.max(...NEWS.map(n=>n.ts||0)):0,nage=newest?Math.round((nowS-newest)/60):null;
+ const nf=(NEWS_OK===false||!nn)?{c:'up',label:'取得失敗: ニュースを取得できていません'}:(isOpen()&&nage>180?{c:'ac',label:`古い: 最新の記事は${nage}分前(${tm({ts:newest})} 公開)`}:{c:'ok',label:`最新の記事 ${tm({ts:newest})} 公開(${nage}分前)`});
+ $('#f-news').innerHTML=`<div class="fresh">${fb(nf)} <span class="mu">取得元: Yahoo!ニュース・Googleニュース(RSS) / 取得 ${NEWS_T?new Date(NEWS_T).toLocaleTimeString('ja-JP'):'—'} / ${nn}件。各記事の時刻は発信元の公開時刻</span></div>`;
+ const d0=DISC[0],df=(DISC_OK===false)?{c:'up',label:'取得失敗: 適時開示を取得できていません'}:(!DISC.length?{c:'ac',label:'0件(開示がまだ無い、または取得できていません)'}:{c:'ok',label:`最新の開示 ${d0.date.slice(5)} ${d0.time}(${DISC.length}件)`});
+ $('#f-disc').innerHTML=`<div class="fresh">${fb(df)} <span class="mu">取得元: 東証TDnet(適時開示) / GitHub取得 ${DISC_T?new Date(DISC_T).toLocaleTimeString('ja-JP'):'—'}。タイトルと原文リンクのみ</span></div>`;
+ const ic=c=>c=='ok'?'<b class="ok">✓</b>':c=='up'?'<b class="up">✗</b>':c=='mu'?'<b class="mu">－</b>':'<b class="ac">⚠</b>',row=(a,b,c,d,e)=>`<tr><td>${a}</td><td style="text-align:left;white-space:normal">${b}</td><td>${c}</td><td style="text-align:left;white-space:normal">${d}</td><td>${ic(e)}</td></tr>`;
+ $('#dstat').innerHTML='<table><tr><th>データ</th><th>取得元</th><th>最終更新</th><th>区分・状態</th><th></th></tr>'
+  +row('株価(全銘柄)','Yahoo!ファイナンス(GitHub Actions)',hmT(D.ts),'遅延(Yahoo約20分)+取得間隔',(nowS-D.ts)/60>(isOpen()?20:1e9)?'ac':'ok')
+  +row('株価(ライブ)','Yahoo!ファイナンス(Cloudflare Worker)',LV.t?new Date(LV.t).toLocaleTimeString('ja-JP'):'—',LV.ok?`遅延 ${LV.n}/${LV.tot}件`:'未接続(画面上部の「ライブ」で診断)',LV.ok?'ok':'up')
+  +row('全銘柄スキャン','Yahoo!ファイナンス(Worker /snap)',LV.sw?new Date(LV.sw).toLocaleTimeString('ja-JP'):'—',(window.SWP&&SWP.tot)?`${SWP.n.toLocaleString()}/${SWP.tot.toLocaleString()}銘柄`:'未実行',LV.sw?'ok':'mu')
+  +row('指数・為替・先物','Yahoo!ファイナンス',hmT(t||D.ts),miss.length?'欠損: '+miss.join('、'):f.label,miss.length?'up':f.c)
+  +row('ニュース','Yahoo!ニュース・Googleニュース',NEWS_T?new Date(NEWS_T).toLocaleTimeString('ja-JP'):'—',nf.label,nf.c)
+  +row('適時開示','東証TDnet',DISC_T?new Date(DISC_T).toLocaleTimeString('ja-JP'):'—',df.label,df.c)
+  +'</table><div class="mu" style="margin-top:3px">「リアルタイム」と表示するデータはありません。取得できないデータは推測せず「取得失敗」と表示します。</div>'}
+const renderAll=()=>{if(!D)return;prep();renderTicker();renderLeft();renderScanner();renderWarn();renderDisc();renderNews();renderDrawer();selChip();renderFresh()};
 const LKEEP=['price','prev','open','hi','lo','vol','vr','val','chg','chgv','gap','gapv','fo','vwap','vd','m1','m5','m15','rng','used','orh','orl','orf','spark','lt','intra'];
 const hhmm=t=>new Date(t*1000).toLocaleTimeString('ja-JP',{timeZone:'Asia/Tokyo',hour:'2-digit',minute:'2-digit'});
 function updInfo(){if(!D)return;const now=Date.now()/1000,age=Math.round((now-D.ts)/60),fa=Math.round((now-(D.full_ts||D.ts))/60);let t=`GitHub更新: 注目銘柄${age}分前・全銘柄${fa}分前`;if(LV.ok&&LV.lt)t=`株価時刻 ${hhmm(LV.lt)}(${Math.max(0,Math.round((now-LV.lt)/60))}分遅れ) / `+t;$('#upd').textContent=t}
@@ -137,7 +172,7 @@ function applyMarket(d){OLD={};IOLD={};const keep=new Map(),ki=new Map();
  if(D){S.forEach(h=>{OLD[h.code]=h.price;if(h.lt)keep.set(h.code,h)});D.index.forEach(i=>{IOLD[i.sym]=i.price;if(i.lt)ki.set(i.sym,i)})}
  D=d;S=d.stocks;BY=new Map(S.map(h=>[h.code,h]));IDXDEF.forEach(([sy,nm])=>{if(!D.index.some(i=>i.sym==sy))D.index.push({sym:sy,name:nm,price:null,chg:0,chgv:0})});
  keep.forEach((o,c)=>{const h=BY.get(c);if(h)LKEEP.forEach(k=>{if(o[k]!==undefined)h[k]=o[k]})});D.index.forEach(i=>{const o=ki.get(i.sym);if(o)Object.assign(i,o)});
- if(!SEL||!BY.has(SEL))SEL=S[0]?S[0].code:'';prep();fillFilters();
+ if(SEL&&!BY.has(SEL))SEL='';prep();fillFilters();
  $('#warn').innerHTML=!d.count?'<div class="warn">データがまだありません。GitHub の Actions で update-site を実行してください。</div>':d.universe<1000?`<div class="warn">全銘柄の一覧を取得できていません(現在${d.universe}銘柄)。README の「全銘柄が出ないとき」を確認してください。</div>`:'';updInfo()}
 const IDXDEF=[['^N225','日経平均'],['1306.T','TOPIX(1306)'],['2516.T','グロース250(2516)'],['NIY=F','日経225先物(CME円)'],['USDJPY=X','ドル円'],['^DJI','NYダウ'],['^IXIC','NASDAQ'],['^GSPC','S&P500'],['^SOX','SOX指数'],['^VIX','VIX']];
 async function loadMarket(){if(LOADING)return;LOADING=true;
@@ -163,8 +198,8 @@ async function newsViaWorker(){const feeds=[['Yahoo!ニュース経済','https:/
 async function loadNews(){let d=null;try{d=await(await fetch('data/news.json?t='+Date.now())).json()}catch(e){}
  NEWS=(d&&d.items)||[];let at=d?d.asof:'';
  if(!NEWS.length&&LV.worker&&S.length){try{NEWS=await newsViaWorker();at=new Date().toLocaleTimeString('ja-JP')+'(Worker経由)'}catch(e){}}
- $('#nwt').textContent=at;
- try{const x=await(await fetch('data/disclosures.json?t='+Date.now())).json();DISC=x.items||[]}catch(e){DISC=[]}
+ $('#nwt').textContent=at;NEWS_T=Date.now();NEWS_OK=NEWS.length>0;
+ try{const x=await(await fetch('data/disclosures.json?t='+Date.now())).json();DISC=x.items||[];DISC_OK=true;DISC_T=Date.now()}catch(e){DISC=[];DISC_OK=false}
  if(D)renderAll();else{renderNews();renderDisc()}
  try{EV=await(await fetch('data/events.json?t='+Date.now())).json();if(!EV||!EV.today||!EV.today.length)throw 0}catch(x){EV={date:'',today:[['08:45','日経225先物 日中寄付'],['09:00','東証 寄付(前場)'],['11:30','前場引け'],['12:30','後場寄付'],['15:30','大引け']],upcoming:[]}}LASTMIN=-1;renderEv()}
 /* ---- Worker経由の全銘柄スキャン(約3,900銘柄を45銘柄ずつ並列取得し、現在値・出来高などを更新) ---- */
@@ -193,13 +228,13 @@ async function scanUniverse(){if(!LV.worker||SCANNING)return;SCANNING=true;
 document.addEventListener('click',e=>{if(TAB!='info'||!D)return;
  const st=e.target.closest('[data-star]');if(st){e.stopPropagation();const c=st.dataset.star;STARS=STARS.includes(c)?STARS.filter(x=>x!=c):[...STARS,c];saveStars();renderAll();nextM=0;return}
  const md=e.target.closest('[data-mode]');if(md){ST.mode=md.dataset.mode;ST.page=0;renderScanner();return}
- if(e.target.closest('#dx')){OPEN=false;renderDrawer();selChip();return}
- const ac=e.target.closest('[data-act]');if(ac){if(ac.dataset.act=='toggle')OPEN=!OPEN;renderDrawer();selChip();return}
+ if(e.target.closest('#dx')){deselect();return}
+ const ac=e.target.closest('[data-act]');if(ac){deselect();return}
  const ns=e.target.closest('[data-ns]');if(ns){lsSet('ns',ns.dataset.ns);renderNews();return}
  const df=e.target.closest('[data-df]');if(df){lsSet('df',df.dataset.df);renderDisc();return}
  const r=e.target.closest('[data-c]');if(r){e.preventDefault();SEL=r.dataset.c;OPEN=true;renderDrawer();selChip();if(BY.get(SEL)&&!BY.get(SEL).intra)live().then(renderDrawer);return}
 });
-document.addEventListener('esc',()=>{if(OPEN){OPEN=false;renderDrawer();selChip()}});
+document.addEventListener('esc',()=>{if(OPEN||SEL)deselect()});
 document.addEventListener('tabshow',()=>{if(TAB!='info')$('#drawer').classList.add('hide');else renderDrawer()});
 $('#mv').value=String(ST.minv);$('#mv').onchange=()=>{ST.minv=+$('#mv').value;ST.page=0;renderScanner()};
 $('#aq').value=ST.q;$('#aq').oninput=()=>{ST.q=$('#aq').value;ST.page=0;renderScanner()};
@@ -209,10 +244,10 @@ const LN=h=>`${h.code} ${h.name}[${h.sector}] 現在値${fp(h.price)} 前日比$
 const mkt=()=>{const R=window.__R||regime();return `【データ時刻】${D.asof} JST(Yahoo!ファイナンス由来・遅延あり)\n【市場】\n${D.index.map(i=>`${i.name}: ${fx(i.price,i.price<20?3:2)} (${pc(i.chg)})`).join('\n')}\n【市場状態(機械集計)】${R.label} 総合${R.tot} / 日本株指数${R.trend} 外部環境${R.ext} 値上がり比率${R.br}(上昇${R.up}・下落${R.dn}) VIX指標${R.vol==null?'-':R.vol}\n【主戦場】${R.theme?R.theme.k+' '+pc(R.theme.w):'-'} 【弱い業種】${R.warn.map(s=>s.k+' '+pc(s.w)).join(' / ')}`};
 const INTRO='あなたは日本株デイトレード向けの市場整理アシスタントです。以下のデータだけを根拠に事実ベースで整理してください。売買の推奨や利益の断定はせず、データにない情報は書かないでください。\n';
 PROMPTS.market=()=>D&&S.length?`${INTRO}依頼: 市場全体の状況を、日経・TOPIX・為替・米国市場・先物・ニュースの範囲で整理し、注意すべき材料とリスクを示してください。\n\n${mkt()}\n\n【ニュース(時刻つき)】\n${NEWS.slice(0,10).map(n=>`${tm(n)} ${n.title}`).join('\n')}`:'';
-PROMPTS.stock=()=>{if(!D||!BY.has(SEL))return '';const h=BY.get(SEL),rel=(SECW[h.sector]?SECW[h.sector].list:[]).filter(x=>x.code!=h.code).sort((a,b)=>(b.val||0)-(a.val||0)).slice(0,8),ns=NEWS.filter(n=>(n.codes||[]).includes(h.code)||n.title.includes(h.name)).slice(0,8);
+PROMPTS.stock=()=>{if(!D||!BY.has(SEL))return '銘柄が選択されていません。スキャナーの行をクリックして銘柄を選び、もう一度「銘柄分析」を押してください。';const h=BY.get(SEL),rel=(SECW[h.sector]?SECW[h.sector].list:[]).filter(x=>x.code!=h.code).sort((a,b)=>(b.val||0)-(a.val||0)).slice(0,8),ns=NEWS.filter(n=>(n.codes||[]).includes(h.code)||n.title.includes(h.name)).slice(0,8);
  return `${INTRO}依頼: 次の銘柄について、(1)値動きと需給の整理 (2)注意すべき価格帯と現在値からの距離 (3)同業の動きとの比較 (4)リスク を示してください。\n\n【対象】${LN(h)}\n始値${fp(h.open)} 高値${fp(h.hi)} 安値${fp(h.lo)} 前日終値${fp(h.prev)} 前日高値${fp(h.pyh)} 前日安値${fp(h.pyl)} VWAP${fp(h.vwap)} OR高値${fp(h.orh)} OR安値${fp(h.orl)} 52週高値${fp(h.h52)} 52週安値${fp(h.l52)} 出来高${fv(h.vol)}株(前日同時刻${fv(h.pv)}株) 当日値幅${fp(h.rng)}円(平均${fp(h.atr)}円)\n\n【同業(売買代金上位)】\n${rel.map(LN).join('\n')}\n\n【適時開示】\n${(DK[h.code]||[]).slice(0,6).map(x=>x.date.slice(5)+' '+x.time+' '+x.title).join('\n')||'なし'}\n\n【ニュース】\n${ns.length?ns.map(n=>`${tm(n)} ${n.title}`).join('\n'):'該当なし'}`};
 PROMPTS.total=()=>{if(!D||!S.length)return '';const P=S.filter(h=>(h.val||0)>=ST.minv),top=P.slice().sort((a,b)=>b.hs-a.hs).slice(0,15),an=P.filter(anom).sort((a,b)=>b.hs-a.hs).slice(0,6),sc=Object.values(SECW).filter(s=>s.val>=20).sort((a,b)=>b.w-a.w),W=STARS.map(c=>BY.get(c)).filter(Boolean);
  return `${INTRO}依頼: 市場→セクター→ランキング→ニュース→注目銘柄の順に、今日のデイトレ環境を整理し、なぜ各銘柄が監視対象になっているかを数値で説明してください。\n\n${mkt()}\n\n【業種(売買代金加重騰落率)】${sc.slice(0,6).concat(sc.slice(-4)).map(s=>s.k+' '+pc(s.w)).join(' / ')}\n\n【注目銘柄(熱さ上位15・売買代金${ST.minv}億円以上)】\n${top.map(LN).join('\n')}\n\n【異常検知】\n${an.map(LN).join('\n')||'なし'}\n\n【ウォッチ(★)】\n${W.map(LN).join('\n')||'なし'}\n\n【株価注意報(当サイト独自の目安)】\n${P.filter(h=>h.warnSev>0).sort((a,b)=>b.warnSev-a.warnSev||b.val-a.val).slice(0,10).map(h=>h.code+' '+h.name+' '+pc(h.chg)+' '+h.warn.map(w=>w.k).join('・')).join('\n')||'なし'}\n\n【決算・適時開示(新しい順)】\n${DISC.slice(0,15).map(x=>x.date.slice(5)+' '+x.time+' '+x.code+' '+x.name+' '+x.title+' ['+x.tags.join(',')+']').join('\n')||'なし'}\n\n【ニュース(時刻つき・新しい順)】\n${NEWS.slice(0,12).map(n=>`${tm(n)} ${n.title}`).join('\n')}`};
-window.NAMEOF=c=>BY.get(c)?.name;onM=refresh;onN=loadNews;onSec=j=>{renderEv(j);updInfo()};renderAlerts();
+window.NAMEOF=c=>BY.get(c)?.name;onM=refresh;onN=loadNews;onSec=j=>{renderEv(j);updInfo();const m=Math.floor(Date.now()/60000);if(D&&m!=FLM){FLM=m;renderFresh()}};renderAlerts();
 (async()=>{const c=await idb.get('market');if(c&&c.stocks&&c.stocks.length&&!D){applyMarket(c);renderAll();$('#upd').textContent='前回のデータを表示中(最新を取得しています…)'}await loadMarket()})();
 })();

@@ -9,10 +9,12 @@ const r2=x=>x==null||!isFinite(x)?null:Math.round(x*100)/100;
 const lsGet=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
 const idb=(()=>{let p;const open=()=>p??=new Promise((res,rej)=>{const r=indexedDB.open('dt',1);r.onupgradeneeded=()=>r.result.createObjectStore('k');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
  return {get:async k=>{try{const db=await open();return await new Promise(res=>{const q=db.transaction('k').objectStore('k').get(k);q.onsuccess=()=>res(q.result);q.onerror=()=>res(null)})}catch(e){return null}},
-  set:async(k,v)=>{try{const db=await open();db.transaction('k','readwrite').objectStore('k').put(v,k)}catch(e){}}}})();
+  set:async(k,v)=>{try{const db=await open();return await new Promise(res=>{const tx=db.transaction('k','readwrite');tx.objectStore('k').put(v,k);tx.oncomplete=()=>res(true);tx.onerror=()=>res(false)})}catch(e){return false}},
+  del:async k=>{try{const db=await open();db.transaction('k','readwrite').objectStore('k').delete(k)}catch(e){}},
+  keys:async()=>{try{const db=await open();return await new Promise(res=>{const q=db.transaction('k').objectStore('k').getAllKeys();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>res([])})}catch(e){return []}}}})();
 let STARS=lsGet('stars',[]);const saveStars=()=>lsSet('stars',STARS);
 const PROMPTS={};let TAB=(location.hash=='#trade')?'trade':'info';
-const AIKEYS={info:[['market','市場分析'],['stock','銘柄分析'],['total','総合分析']],trade:[['t_sum','今日の総括'],['t_loss','負けパターン'],['t_time','時間帯'],['t_sym','銘柄別'],['t_fix','改善ポイント']]};
+const AIKEYS={info:[['market','市場分析'],['stock','銘柄分析'],['total','総合分析']],trade:[['t_sum','今日の総括'],['t_loss','負けパターン'],['t_time','時間帯'],['t_sym','銘柄別'],['t_fix','改善ポイント'],['t_risk','リスク点検'],['t_plan','計画と実績']]};
 function showTab(t){TAB=t;history.replaceState(null,'','#'+t);['info','trade'].forEach(k=>{$('#v-'+k).classList.toggle('hide',k!=t);$('#t-'+k).classList.toggle('on',k==t)});
  $('#ticker').classList.toggle('hide',t!='info');
  $('#aibtns').innerHTML=AIKEYS[t].map(([k,l])=>`<button data-pk="${k}">${l}</button>`).join('');document.dispatchEvent(new Event('tabshow'))}
@@ -104,7 +106,7 @@ $('#t-info').onclick=()=>showTab('info');$('#t-trade').onclick=()=>showTab('trad
 $('#rate').value=String(lsGet('rate',5));$('#rate').onchange=()=>{lsSet('rate',+$('#rate').value);nextM=0};
 $('#splitc').onchange=e=>{if(e.target.checked)document.body.classList.add('split');else endSplit()};
 $('#aibtns').onclick=e=>{const b=e.target.closest('button[data-pk]');if(b)setPrompt(b.dataset.pk)};
-$('#pcp').onclick=copyPrompt;$('#pgpt').onclick=()=>openAI('gpt');$('#pcl').onclick=()=>openAI('claude');
+$('#pcp').onclick=copyPrompt;$('#pclr').onclick=()=>{$('#ptx').value='';$('#ptx').dataset.k='';$('#pmsg').textContent='プロンプトを消去しました';document.querySelectorAll('#aibtns button').forEach(b=>b.classList.remove('on'))};$('#pgpt').onclick=()=>openAI('gpt');$('#pcl').onclick=()=>openAI('claude');
 $('#lv').onclick=openLV;$('#rst').onclick=()=>{try{['sz','wd'].forEach(k=>localStorage.removeItem(k))}catch(e){}location.reload()};
 document.addEventListener('keydown',e=>{if(e.key=='Escape')document.dispatchEvent(new Event('esc'))});
 new ResizeObserver(()=>{const h=$('#hd');if(h)document.body.style.setProperty('--hh',h.offsetHeight+'px')}).observe($('#hd'));
